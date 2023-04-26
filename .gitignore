@@ -1,0 +1,5 @@
+# pycharm
+/.idea/
+
+# test cache
+/tests/solver_tests/.pytest_cache/
