@@ -4,16 +4,15 @@ import paddle
 import paddle.nn as nn
 
 from .odeint import odeint
-from ..utils.ode_utils import _mixed_norm
+from ..utils.ode_utils import _mixed_norm, _rms_norm
 
 
 class OdeintAdjointMethod(paddle.autograd.PyLayer):
 
     @staticmethod
-    def forward(ctx, shapes, func, y0, t, rtol, atol, method, options, event_fn, adjoint_rtol, adjoint_atol, adjoint_method,
-                adjoint_options, t_requires_grad, *adjoint_params):
+    def forward(ctx, func, y0, t, rtol, atol, method, options, event_fn, adjoint_rtol, adjoint_atol, adjoint_method, adjoint_options, t_requires_grad,
+                *adjoint_params):
 
-        ctx.shapes = shapes
         ctx.func = func
         ctx.adjoint_rtol = adjoint_rtol
         ctx.adjoint_atol = adjoint_atol
@@ -23,18 +22,19 @@ class OdeintAdjointMethod(paddle.autograd.PyLayer):
 
         with paddle.no_grad():
             ans = odeint(func, y0, t, solver=method, rtol=rtol, atol=atol, options=options)
-
-            if event_fn is None:
-                y = ans
-                ctx.save_for_backward(t, y, *adjoint_params)
-            else:
-                event_t, y = ans
-                ctx.save_for_backward(t, y, event_t, *adjoint_params)
+            ctx.save_for_backward(t, ans, *adjoint_params)
 
         return ans
 
     @staticmethod
-    def backward(ctx, *grad_y):
+    def backward(ctx, grad_y):
+        """
+        因为不包含event模式，ans仅为solition
+        所以直接使用grad_y即可对应forward输出tensor的梯度
+        :param ctx:
+        :param grad_y:
+        :return:
+        """
         with paddle.no_grad():
             func = ctx.func
             adjoint_rtol = ctx.adjoint_rtol
@@ -45,15 +45,8 @@ class OdeintAdjointMethod(paddle.autograd.PyLayer):
 
             # Backprop as if integrating up to event time.
             # Does NOT backpropagate through the event time.
-            event_mode = ctx.event_mode
-            if event_mode:
-                t, y, event_t, *adjoint_params = ctx.saved_tensors
-                _t = t
-                t = paddle.concat([t[0].reshape(-1), event_t.reshape(-1)])
-                grad_y = grad_y[1]
-            else:
-                t, y, *adjoint_params = ctx.saved_tensors
-                grad_y = grad_y[0]
+
+            t, y, *adjoint_params = ctx.saved_tensor()
 
             adjoint_params = tuple(adjoint_params)
 
@@ -61,8 +54,8 @@ class OdeintAdjointMethod(paddle.autograd.PyLayer):
             #      Set up initial state      #
             ##################################
 
-            # [-1] because y and grad_y are both of shape (len(t), *y0.shape)
-            aug_state = [paddle.zeros((), dtype=y.dtype), y[-1], grad_y[-1]]  # vjp_t, y, vjp_y
+            # [-1] because y and grad_y are both of shape (len(t), *y0.shape) 初始状态为最后一个时刻的数据和梯度
+            aug_state = [paddle.zeros([], dtype=y.dtype), y[-1], grad_y[-1]]  # vjp_t, y, vjp_y
             aug_state.extend([paddle.zeros_like(param) for param in adjoint_params])  # vjp_params
 
             ##################################
@@ -79,23 +72,22 @@ class OdeintAdjointMethod(paddle.autograd.PyLayer):
 
                 with paddle.set_grad_enabled(True):
                     t_ = t.detach()
-                    t = t_.requires_grad_(True)
-                    y = y.detach().requires_grad_(True)
+                    t = paddle.assign(t)
+                    t.stop_gradient = False
+                    y = paddle.assign(y)
+                    y.stop_gradient = False
 
                     # If using an adaptive solver we don't want to waste time resolving dL/dt unless we need it (which
                     # doesn't necessarily even exist if there is piecewise structure in time), so turning off gradients
                     # wrt t here means we won't compute that if we don't need it.
                     func_eval = func(t if t_requires_grad else t_, y)
 
-                    # Workaround for PyTorch bug #39784
-                    _t = torch.as_strided(t, (), ())  # noqa
-                    _y = torch.as_strided(y, (), ())  # noqa
-                    _params = tuple(torch.as_strided(param, (), ()) for param in adjoint_params)  # noqa
-
                     vjp_t, vjp_y, *vjp_params = paddle.autograd.grad(
-                        func_eval, (t, y) + adjoint_params, -adj_y,
-                        allow_unused=True, retain_graph=True
-                    )
+                        outputs=func_eval,
+                        inputs=(t, y) + adjoint_params,
+                        grad_outputs=-adj_y,
+                        allow_unused=True,
+                        retain_graph=True)
 
                 # autograd.grad returns None if no gradient, set to zero.
                 vjp_t = paddle.zeros_like(t) if vjp_t is None else vjp_t
@@ -104,15 +96,6 @@ class OdeintAdjointMethod(paddle.autograd.PyLayer):
                               for param, vjp_param in zip(adjoint_params, vjp_params)]
 
                 return vjp_t, func_eval, vjp_y, *vjp_params
-
-            # Add adjoint callbacks
-            # for callback_name, adjoint_callback_name in zip(_all_callback_names, _all_adjoint_callback_names):
-            #     try:
-            #         callback = getattr(func, adjoint_callback_name)
-            #     except AttributeError:
-            #         pass
-            #     else:
-            #         setattr(augmented_dynamics, callback_name, callback)
 
             ##################################
             #       Solve adjoint ODE        #
@@ -126,15 +109,16 @@ class OdeintAdjointMethod(paddle.autograd.PyLayer):
                 if t_requires_grad:
                     # Compute the effect of moving the current time measurement point.
                     # We don't compute this unless we need to, to save some computation.
-                    func_eval = func(t[i], y[i])
+                    func_eval = func.move(t[i], y[i])
                     dLd_cur_t = func_eval.reshape(-1).dot(grad_y[i].reshape(-1))
                     aug_state[0] -= dLd_cur_t
                     time_vjps[i] = dLd_cur_t
 
                 # Run the augmented system backwards in time.
                 aug_state = odeint(
-                    augmented_dynamics, tuple(aug_state),
-                    t[i - 1:i + 1].flip(0),
+                    func=augmented_dynamics,
+                    y0=tuple(aug_state),
+                    t=t[i - 1:i + 1].flip(0),
                     solver=adjoint_method, rtol=adjoint_rtol, atol=adjoint_atol, options=adjoint_options
                 )
                 aug_state = [a[1] for a in aug_state]  # extract just the t[i - 1] value
@@ -144,17 +128,13 @@ class OdeintAdjointMethod(paddle.autograd.PyLayer):
             if t_requires_grad:
                 time_vjps[0] = aug_state[0]
 
-            # Only compute gradient wrt initial time when in event handling mode.
-            if event_mode and t_requires_grad:
-                time_vjps = paddle.concat([time_vjps[0].reshape(-1), paddle.zeros_like(_t[1:])])
-
             adj_y = aug_state[2]
             adj_params = aug_state[3:]
 
-        return (None, None, adj_y, time_vjps, None, None, None, None, None, None, None, None, None, None, *adj_params)
+        return (None, time_vjps, *adj_params)
 
 
-def odeint_adjoint(func, y0, t, *, rtol=1e-7, atol=1e-9, solver=None, options=None, event_fn=None,
+def odeint_adjoint(func: callable, y0, t, *, rtol=1e-7, atol=1e-9, solver=None, options={'norm': _rms_norm}, event_fn=None,
                    adjoint_rtol=None, adjoint_atol=None, adjoint_solver=None, adjoint_options=None, adjoint_params=None):
     # We need this in order to access the variables inside this module,
     # since we have no other way of getting variables along the execution path.
@@ -188,7 +168,7 @@ def odeint_adjoint(func, y0, t, *, rtol=1e-7, atol=1e-9, solver=None, options=No
 
     # Filter params that don't require gradients.
     oldlen_ = len(adjoint_params)
-    adjoint_params = tuple(p for p in adjoint_params if p.requires_grad)
+    adjoint_params = tuple(p for p in adjoint_params if p.trainable)
     if len(adjoint_params) != oldlen_:
         # Some params were excluded.
         # Issue a warning if a user-specified norm is specified.
@@ -196,31 +176,14 @@ def odeint_adjoint(func, y0, t, *, rtol=1e-7, atol=1e-9, solver=None, options=No
             warnings.warn("An adjoint parameter was passed without requiring gradient. For efficiency this will be "
                           "excluded from the adjoint pass, and will not appear as a tensor in the adjoint norm.")
 
-    # Convert to flattened state.
-    # shapes, func, y0, t, rtol, atol, method, options, event_fn, decreasing_time = _check_inputs(func, y0, t, rtol, atol, method, options, event_fn, SOLVERS)
-
     # Handle the adjoint norm function.
     state_norm = options["norm"]
-    handle_adjoint_norm_(adjoint_options, shapes, state_norm)
+    handle_adjoint_norm_(adjoint_options, None, state_norm)  # todo:shapes
 
-    ans = OdeintAdjointMethod.apply(shapes, func, y0, t, rtol, atol, solver, options, event_fn, adjoint_rtol, adjoint_atol,
-                                    adjoint_solver, adjoint_options, t.requires_grad, *adjoint_params)
+    solution = OdeintAdjointMethod.apply(func, y0, t, rtol, atol, solver, options, event_fn, adjoint_rtol, adjoint_atol,
+                                         adjoint_solver, adjoint_options, not t.stop_gradient, *adjoint_params)  # todo:shapes
 
-    if event_fn is None:
-        solution = ans
-    else:
-        event_t, solution = ans
-        event_t = event_t.to(t)
-        if decreasing_time:
-            event_t = -event_t
-
-    if shapes is not None:
-        solution = _flat_to_shape(solution, (len(t),), shapes)
-
-    if event_fn is None:
-        return solution
-    else:
-        return event_t, solution
+    return solution
 
 
 def find_parameters(module):
@@ -230,7 +193,7 @@ def find_parameters(module):
     if getattr(module, '_is_replica', False):
 
         def find_tensor_attributes(module):
-            tuples = [(k, v) for k, v in module.__dict__.items() if paddle.is_tensor(v) and v.requires_grad]
+            tuples = [(k, v) for k, v in module.__dict__.items() if paddle.is_tensor(v) and v.requires_grad]  # todo  DataParallel
             return tuples
 
         gen = module._named_members(get_members_fn=find_tensor_attributes)
@@ -282,8 +245,8 @@ def handle_adjoint_norm_(adjoint_options, shapes, state_norm):
 
                     def _adjoint_norm(tensor_tuple):
                         t, y, adj_y, *adj_params = tensor_tuple
-                        y = _flat_to_shape(y, (), shapes)
-                        adj_y = _flat_to_shape(adj_y, (), shapes)
+                        y = flat_to_shape(y, (), shapes)  # todo
+                        adj_y = flat_to_shape(adj_y, (), shapes)  # todo
                         return adjoint_norm((t, *y, *adj_y, *adj_params))
 
                     adjoint_options['norm'] = _adjoint_norm

@@ -1,6 +1,9 @@
 from abc import abstractmethod, ABC
 
+import paddle
 import paddle.nn as nn
+
+from paddlexde.types import TupleOrTensor
 
 
 class BaseXDE(ABC, nn.Layer):
@@ -9,10 +12,25 @@ class BaseXDE(ABC, nn.Layer):
     Inheriting from this class ensures `noise_type` and `sde_type` are valid attributes, which the solver depends on.
     """
 
-    def __init__(self, name="XDE", var_nums=1):
+    def __init__(self, name, var_nums, y0: TupleOrTensor, t):
         super(BaseXDE, self).__init__()
         self.name = name
         self.var_nums = var_nums  # 返回值数量
+
+        if isinstance(y0, tuple):
+            self.is_tuple = True
+            self.shapes = [y0_.shape for y0_ in y0]
+            self.num_elements = [paddle.numel(y0_) for y0_ in y0]
+            self.y0 = paddle.concat([y0_.reshape([-1]) for y0_ in y0])
+
+        else:
+            self.is_tuple = False
+            self.shapes = [y0.shape]
+            self.num_elements = [paddle.numel(y0)]
+            self.y0 = y0
+
+        self.t = t
+        self.length = len(t)
 
     @abstractmethod
     def handle(self, h, ts):
@@ -55,6 +73,25 @@ class BaseXDE(ABC, nn.Layer):
         """
         pass
 
+    def format(self, sol):
+        if self.is_tuple:
+            return self.flat_to_shape(sol, (len(self.t),))
+        else:
+            return sol
+
     def method(self):
         print(f"current method is {self.name}.")
         return self.name
+
+    def flat_to_shape(self, tensor, length):
+        tensor_list = []
+        total = 0
+        for shape, num_ele in zip(self.shapes, self.num_elements):
+            next_total = total + num_ele
+            # It's important that this be view((...)), not view(...). Else when length=(), shape=() it fails.
+            if len(shape) == 0:
+                tensor_list.append(tensor[..., total:next_total].reshape((*length, 0)))
+            else:
+                tensor_list.append(tensor[..., total:next_total].reshape((*length, *shape)))
+            total = next_total
+        return tuple(tensor_list)

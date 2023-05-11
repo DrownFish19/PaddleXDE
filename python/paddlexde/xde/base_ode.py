@@ -1,7 +1,7 @@
 import paddle
-import paddle.nn as nn
 
 from .base_xde import BaseXDE
+from ..types import LayerOrFunction, TupleOrTensor
 
 
 class BaseODE(BaseXDE):
@@ -9,15 +9,19 @@ class BaseODE(BaseXDE):
 
     """
 
-    def __init__(self, func: nn.Layer):
-        super(BaseODE, self).__init__(name="ODE", var_nums=1)
+    def __init__(self, func: LayerOrFunction, y0: TupleOrTensor, t):
+        super(BaseODE, self).__init__(name="ODE", var_nums=1, y0=y0, t=t)
         self.func = func
 
     def handle(self, h, ts):
         pass
 
     def move(self, t0, dt, y0):
-        dy = self.func(t0, y0)
+        if self.is_tuple:
+            dy = self.func(t0, self.flat_to_shape(y0, ()))
+            dy = paddle.concat([dy_.reshape([-1]) for dy_ in dy])
+        else:
+            dy = self.func(t0, y0)
         return paddle.stack([dy])
 
     def fuse(self, dy, dt, y0):
