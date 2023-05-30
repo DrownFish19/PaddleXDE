@@ -15,7 +15,4 @@ LayerOrFunction = Union[Layer, callable]
 Scalar = Union[float, Tensor]
 Vector = Union[Sequence[float], Tensor]
 
-# Size = paddle.Size
-# Sizes = Sequence[Size]
-
 TupleOrTensor = Union[tuple, Tensor]

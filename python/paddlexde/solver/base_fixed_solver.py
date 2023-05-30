@@ -157,7 +157,7 @@ class FixedSolver(metaclass=abc.ABCMeta):
             k1 = self.move(t0, dt, y0)
 
         k2 = self.move(t_one_third, dt_one_third, self.fuse(k1, dt_one_third, y0))
-        k3 = self.move(t_two_thirds, dt_one_third, self.fuse(k2 - k1 * _one_third, dt, y0))
-        k4 = self.move(t1, t_one_third, self.fuse(k1 - k2 + k3, dt, y0))
+        k3 = self.move(t_two_thirds, dt_one_third, self.fuse([n2 - n1 * _one_third for (n1, n2) in zip(k1, k2)], dt, y0))
+        k4 = self.move(t1, t_one_third, self.fuse([n1 - n2 + n3 for (n1, n2, n3) in zip(k1, k2, k3)], dt, y0))
 
         return (self.fuse(k1, dt, y0) + 3 * self.fuse(k2, dt, y0) + 3 * self.fuse(k3, dt, y0) + self.fuse(k4, dt, y0)) * 0.125
