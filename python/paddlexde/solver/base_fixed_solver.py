@@ -134,7 +134,7 @@ class FixedSolver(metaclass=abc.ABCMeta):
 
         k1 = f0
         if k1 is None:
-            k1 = self.move(t0, t1, y0)
+            k1 = self.move(t0, dt, y0)
 
         k2 = self.move(t_half, half_dt, self.fuse(k1, half_dt, y0))
         k3 = self.move(t_half, half_dt, self.fuse(k2, half_dt, y0))

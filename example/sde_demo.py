@@ -18,7 +18,7 @@ parser.add_argument('--niters', type=int, default=2000)
 parser.add_argument('--test_freq', type=int, default=20)
 parser.add_argument('--viz', type=bool, default=True)
 parser.add_argument('--gpu', type=int, default=0)
-parser.add_argument('--adjoint', type=bool, default=True)
+parser.add_argument('--adjoint', type=bool, default=False)
 args = parser.parse_args()
 
 if args.adjoint:

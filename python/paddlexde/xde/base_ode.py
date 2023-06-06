@@ -2,6 +2,7 @@ import paddle
 
 from .base_xde import BaseXDE
 from ..types import LayerOrFunction, TupleOrTensor
+from ..utils.misc import flat_to_shape
 
 
 class BaseODE(BaseXDE):
@@ -18,7 +19,7 @@ class BaseODE(BaseXDE):
 
     def move(self, t0, dt, y0):
         if self.is_tuple:
-            dy = self.func(t0, self.flat_to_shape(y0, ()))
+            dy = self.func(t0, flat_to_shape(y0, (), self.shapes, self.num_elements))
             dy = paddle.concat([dy_.reshape([-1]) for dy_ in dy])
         else:
             dy = self.func(t0, y0)

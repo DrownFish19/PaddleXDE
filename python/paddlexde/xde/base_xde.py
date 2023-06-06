@@ -4,6 +4,7 @@ import paddle
 import paddle.nn as nn
 
 from paddlexde.types import TupleOrTensor
+from paddlexde.utils.misc import flat_to_shape
 
 
 class BaseXDE(ABC, nn.Layer):
@@ -75,23 +76,10 @@ class BaseXDE(ABC, nn.Layer):
 
     def format(self, sol):
         if self.is_tuple:
-            return self.flat_to_shape(sol, (len(self.t),))
+            return flat_to_shape(sol, (len(self.t),), self.shapes, self.num_elements)
         else:
             return sol
 
     def method(self):
         print(f"current method is {self.name}.")
         return self.name
-
-    def flat_to_shape(self, tensor, length):
-        tensor_list = []
-        total = 0
-        for shape, num_ele in zip(self.shapes, self.num_elements):
-            next_total = total + num_ele
-            # It's important that this be view((...)), not view(...). Else when length=(), shape=() it fails.
-            if len(shape) == 0:
-                tensor_list.append(tensor[..., total:next_total].reshape((*length, 0)))
-            else:
-                tensor_list.append(tensor[..., total:next_total].reshape((*length, *shape)))
-            total = next_total
-        return tuple(tensor_list)

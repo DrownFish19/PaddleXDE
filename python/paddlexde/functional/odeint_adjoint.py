@@ -4,6 +4,7 @@ import paddle
 import paddle.nn as nn
 
 from .odeint import odeint
+from ..utils.misc import flat_to_shape
 from ..utils.ode_utils import _mixed_norm, _rms_norm
 
 
@@ -109,7 +110,7 @@ class OdeintAdjointMethod(paddle.autograd.PyLayer):
                 if t_requires_grad:
                     # Compute the effect of moving the current time measurement point.
                     # We don't compute this unless we need to, to save some computation.
-                    func_eval = func.move(t[i], y[i])
+                    func_eval = func(t[i], y[i])
                     dLd_cur_t = func_eval.reshape(-1).dot(grad_y[i].reshape(-1))
                     aug_state[0] -= dLd_cur_t
                     time_vjps[i] = dLd_cur_t
@@ -245,8 +246,8 @@ def handle_adjoint_norm_(adjoint_options, shapes, state_norm):
 
                     def _adjoint_norm(tensor_tuple):
                         t, y, adj_y, *adj_params = tensor_tuple
-                        y = flat_to_shape(y, (), shapes)  # todo
-                        adj_y = flat_to_shape(adj_y, (), shapes)  # todo
+                        y = flat_to_shape(y, (), shapes)
+                        adj_y = flat_to_shape(adj_y, (), shapes)
                         return adjoint_norm((t, *y, *adj_y, *adj_params))
 
                     adjoint_options['norm'] = _adjoint_norm
