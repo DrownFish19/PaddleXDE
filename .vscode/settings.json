@@ -1,0 +1,6 @@
+{
+    "python.envFile": "${workspaceFolder}/dev.env",
+    "python.analysis.extraPaths": [
+        "./python"
+    ],
+}
