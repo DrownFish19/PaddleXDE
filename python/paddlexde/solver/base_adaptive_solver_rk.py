@@ -3,14 +3,25 @@ import collections
 
 import paddle
 
-from .base_adaptive_solver import AdaptiveSolver
-from ..types import Tensor, Scalar
-from ..utils.ode_utils import sort_tvals, interp_evaluate, compute_error_ratio, optimal_step_size, interp_fit, PaddleAssign
+from ..types import Scalar, Tensor
+from ..utils.ode_utils import (
+    PaddleAssign,
+    compute_error_ratio,
+    interp_evaluate,
+    interp_fit,
+    optimal_step_size,
+    sort_tvals,
+)
 from ..xde import BaseXDE
+from .base_adaptive_solver import AdaptiveSolver
 
-_ButcherTableau = collections.namedtuple('_ButcherTableau', 'alpha, beta, c_sol, c_error')
+_ButcherTableau = collections.namedtuple(
+    "_ButcherTableau", "alpha, beta, c_sol, c_error"
+)
 
-_RungeKuttaState = collections.namedtuple('_RungeKuttaState', 'y1, f1, t0, t1, dt, interp_coeff')
+_RungeKuttaState = collections.namedtuple(
+    "_RungeKuttaState", "y1, f1, t0, t1, dt, interp_coeff"
+)
 
 
 class AdaptiveRKSolver(AdaptiveSolver):
@@ -18,22 +29,24 @@ class AdaptiveRKSolver(AdaptiveSolver):
     tableau: _ButcherTableau
     mid: paddle.Tensor
 
-    def __init__(self,
-                 xde: BaseXDE,
-                 y0: Tensor,
-                 rtol: Scalar,
-                 atol: Scalar,
-                 min_step: Scalar = 0,
-                 max_step: Scalar = float('inf'),
-                 first_step=None,
-                 step_t=None,
-                 jump_t=None,
-                 safety=0.9,
-                 ifactor=10.0,
-                 dfactor=0.2,
-                 max_num_steps=2 ** 31 - 1,
-                 dtype=paddle.float32,
-                 **kwargs):
+    def __init__(
+        self,
+        xde: BaseXDE,
+        y0: Tensor,
+        rtol: Scalar,
+        atol: Scalar,
+        min_step: Scalar = 0,
+        max_step: Scalar = float("inf"),
+        first_step=None,
+        step_t=None,
+        jump_t=None,
+        safety=0.9,
+        ifactor=10.0,
+        dfactor=0.2,
+        max_num_steps=2**31 - 1,
+        dtype=paddle.float32,
+        **kwargs
+    ):
         super(AdaptiveRKSolver, self).__init__(xde=xde, dtype=dtype, y0=y0, **kwargs)
 
         # We use mixed precision. y has its original dtype (probably float32), whilst all 'time'-like objects use
@@ -44,7 +57,9 @@ class AdaptiveRKSolver(AdaptiveSolver):
         self.atol = paddle.to_tensor(atol, dtype=dtype)
         self.min_step = paddle.to_tensor(min_step, dtype=dtype)
         self.max_step = paddle.to_tensor(max_step, dtype=dtype)
-        self.first_step = None if first_step is None else paddle.to_tensor(first_step, dtype=dtype)
+        self.first_step = (
+            None if first_step is None else paddle.to_tensor(first_step, dtype=dtype)
+        )
         self.safety = paddle.to_tensor(safety, dtype=dtype)
         self.ifactor = paddle.to_tensor(ifactor, dtype=dtype)
         self.dfactor = paddle.to_tensor(dfactor, dtype=dtype)
@@ -55,20 +70,26 @@ class AdaptiveRKSolver(AdaptiveSolver):
         self.jump_t = None if jump_t is None else paddle.to_tensor(jump_t, dtype=dtype)
 
         # Copy from class to instance to set device
-        self.tableau = _ButcherTableau(alpha=self.tableau.alpha.astype(dtype=y0.dtype),
-                                       beta=[b.astype(dtype=y0.dtype) for b in self.tableau.beta],
-                                       c_sol=self.tableau.c_sol.astype(dtype=y0.dtype),
-                                       c_error=self.tableau.c_error.astype(dtype=y0.dtype))
+        self.tableau = _ButcherTableau(
+            alpha=self.tableau.alpha.astype(dtype=y0.dtype),
+            beta=[b.astype(dtype=y0.dtype) for b in self.tableau.beta],
+            c_sol=self.tableau.c_sol.astype(dtype=y0.dtype),
+            c_error=self.tableau.c_error.astype(dtype=y0.dtype),
+        )
         self.mid = self.mid.astype(dtype=y0.dtype)
 
     def _before_integrate(self, t):
         t0 = t[0]
         f0 = self.move(t[0], t[1] - t[0], self.y0)
         if self.first_step is None:
-            first_step = self.select_initial_step(t[0], self.y0, self.order - 1, self.rtol, self.atol)
+            first_step = self.select_initial_step(
+                t[0], self.y0, self.order - 1, self.rtol, self.atol
+            )
         else:
             first_step = self.first_step
-        self.rk_state = _RungeKuttaState(self.y0, self.get_dy(f0), t[0], t[0], first_step, [self.y0] * 5)
+        self.rk_state = _RungeKuttaState(
+            self.y0, self.get_dy(f0), t[0], t[0], first_step, [self.y0] * 5
+        )
 
         # Handle step_t and jump_t arguments.
         if self.step_t is None:
@@ -85,17 +106,25 @@ class AdaptiveRKSolver(AdaptiveSolver):
 
         self.step_t = step_t
         self.jump_t = jump_t
-        self.next_step_index = min(bisect.bisect(self.step_t.tolist(), t[0]), len(self.step_t) - 1)
-        self.next_jump_index = min(bisect.bisect(self.jump_t.tolist(), t[0]), len(self.jump_t) - 1)
+        self.next_step_index = min(
+            bisect.bisect(self.step_t.tolist(), t[0]), len(self.step_t) - 1
+        )
+        self.next_jump_index = min(
+            bisect.bisect(self.jump_t.tolist(), t[0]), len(self.jump_t) - 1
+        )
 
     def step(self, next_t):
         """Interpolate through the next time point, integrating as necessary."""
         n_steps = 0
         while next_t > self.rk_state.t1:
-            assert n_steps < self.max_num_steps, 'max_num_steps exceeded ({}>={})'.format(n_steps, self.max_num_steps)
+            assert (
+                n_steps < self.max_num_steps
+            ), "max_num_steps exceeded ({}>={})".format(n_steps, self.max_num_steps)
             self.rk_state = self._adaptive_step(self.rk_state)
             n_steps += 1
-        return interp_evaluate(self.rk_state.interp_coeff, self.rk_state.t0, self.rk_state.t1, next_t)
+        return interp_evaluate(
+            self.rk_state.interp_coeff, self.rk_state.t0, self.rk_state.t1, next_t
+        )
 
     def _runge_kutta_step(self, y0, f0, t0, dt, t1, tableau):
         """Take an arbitrary Runge-Kutta step and estimate error.
@@ -127,18 +156,22 @@ class AdaptiveRKSolver(AdaptiveSolver):
         k.stop_gradient = False
         k = PaddleAssign.apply(target=k, value=f0, index=(..., 0))
         for i, (alpha_i, beta_i) in enumerate(zip(tableau.alpha, tableau.beta)):
-            if alpha_i == 1.:
+            if alpha_i == 1.0:
                 # Always step to perturbing just before the end time, in case of discontinuities.
                 ti = t1
                 # perturb = Perturb.PREV
             else:
                 ti = t0 + alpha_i * dt
                 # perturb = Perturb.NONE
-            yi = y0 + paddle.sum(k[..., :i + 1] * (beta_i * dt), axis=-1).reshape(y0.shape)
+            yi = y0 + paddle.sum(k[..., : i + 1] * (beta_i * dt), axis=-1).reshape(
+                y0.shape
+            )
             f = self.move(ti, dt, yi)
             k = PaddleAssign.apply(target=k, value=self.get_dy(f), index=(..., i + 1))
 
-        if not (tableau.c_sol[-1] == 0 and (tableau.c_sol[:-1] == tableau.beta[-1]).all()):
+        if not (
+            tableau.c_sol[-1] == 0 and (tableau.c_sol[:-1] == tableau.beta[-1]).all()
+        ):
             # This property (true for Dormand-Prince) lets us save a few FLOPs.
             yi = y0 + paddle.sum(k * (dt * tableau.c_sol), axis=-1).reshape(y0.shape)
 
@@ -164,8 +197,10 @@ class AdaptiveRKSolver(AdaptiveSolver):
         ########################################################
         #                      Assertions                      #
         ########################################################
-        assert t0 + dt > t0, 'underflow in dt {}'.format(dt.item())
-        assert paddle.isfinite(y0).all(), 'non-finite values in state `y`: {}'.format(y0)
+        assert t0 + dt > t0, "underflow in dt {}".format(dt.item())
+        assert paddle.isfinite(y0).all(), "non-finite values in state `y`: {}".format(
+            y0
+        )
 
         ########################################################
         #     Make step, respecting prescribed grid points     #
@@ -191,7 +226,9 @@ class AdaptiveRKSolver(AdaptiveSolver):
         # Must be arranged as doing all the step_t handling, then all the jump_t handling, in case we
         # trigger both. (i.e. interleaving them would be wrong.)
 
-        y1, f1, y1_error, k = self._runge_kutta_step(y0, f0, t0, dt, t1, tableau=self.tableau)
+        y1, f1, y1_error, k = self._runge_kutta_step(
+            y0, f0, t0, dt, t1, tableau=self.tableau
+        )
         # dtypes:
         # y1.dtype == self.y0.dtype
         # f1.dtype == self.y0.dtype
@@ -201,7 +238,9 @@ class AdaptiveRKSolver(AdaptiveSolver):
         ########################################################
         #                     Error Ratio                      #
         ########################################################
-        error_ratio = compute_error_ratio(y1_error, self.rtol, self.atol, y0, y1, self.norm)
+        error_ratio = compute_error_ratio(
+            y1_error, self.rtol, self.atol, y0, y1, self.norm
+        )
         accept_step = error_ratio <= 1
 
         # Handle min max stepping
@@ -237,7 +276,9 @@ class AdaptiveRKSolver(AdaptiveSolver):
             t_next = t0
             y_next = y0
             f_next = f0
-        dt_next = optimal_step_size(dt, error_ratio, self.safety, self.ifactor, self.dfactor, self.order)
+        dt_next = optimal_step_size(
+            dt, error_ratio, self.safety, self.ifactor, self.dfactor, self.order
+        )
         dt_next = dt_next.clip(self.min_step, self.max_step)
         rk_state = _RungeKuttaState(y_next, f_next, t0, t_next, dt_next, interp_coeff)
         return rk_state

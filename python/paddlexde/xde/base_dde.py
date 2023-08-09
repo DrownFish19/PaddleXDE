@@ -1,14 +1,12 @@
 import paddle
 
-from .base_xde import BaseXDE
 from ..types import LayerOrFunction, TupleOrTensor
 from ..utils.misc import flat_to_shape
+from .base_xde import BaseXDE
 
 
 class BaseDDE(BaseXDE):
-    """Base class for all ODEs.
-
-    """
+    """Base class for all ODEs."""
 
     def __init__(self, func: LayerOrFunction, y0: TupleOrTensor, t):
         super(BaseDDE, self).__init__(name="ODE", var_nums=1, y0=y0, t=t)

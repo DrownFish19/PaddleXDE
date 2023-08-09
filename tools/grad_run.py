@@ -1,6 +1,7 @@
 import paddle
 from paddle.autograd import PyLayer
 
+
 # Inherit from PyLayer
 class cus_tanh(PyLayer):
     @staticmethod
@@ -18,7 +19,6 @@ class cus_tanh(PyLayer):
 
 data = paddle.randn([2, 3], dtype="float64")
 data.stop_gradient = False
-
 
 
 z = cus_tanh.apply(data, func1=paddle.tanh)

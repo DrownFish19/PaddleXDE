@@ -3,7 +3,16 @@ from ..utils.ode_utils import _rms_norm
 from ..xde import BaseODE
 
 
-def ddeint(func: callable, y0: TupleOrTensor, t, solver, *, rtol=1e-7, atol=1e-9, options: object = {'norm': _rms_norm}):
+def ddeint(
+    func: callable,
+    y0: TupleOrTensor,
+    t,
+    solver,
+    *,
+    rtol=1e-7,
+    atol=1e-9,
+    options: object = {"norm": _rms_norm}
+):
     """Integrate a system of ordinary differential equations.
 
     Solves the initial value problem for a non-stiff system of first order ODEs:
