@@ -26,7 +26,12 @@ class BaseODE(BaseXDE):
         return paddle.stack([dy])
 
     def fuse(self, dy, dt, y0):
-        return dy[0] * dt + y0
+        # 测试是否存在振动
+        y = dy[0] * dt + y0
+        _lambda = 0.001
+        return (dy[0] - _lambda * y) * dt + y0
+
+        # return dy[0] * dt + y0
 
     def get_dy(self, dy):
         return dy[0]

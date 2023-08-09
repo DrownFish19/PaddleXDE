@@ -30,7 +30,7 @@ class OdeintAdjointMethod(paddle.autograd.PyLayer):
     @staticmethod
     def backward(ctx, grad_y):
         """
-        因为不包含event模式，ans仅为solition
+        因为不包含event模式, ans仅为solution
         所以直接使用grad_y即可对应forward输出tensor的梯度
         :param ctx:
         :param grad_y:

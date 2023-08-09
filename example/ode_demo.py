@@ -27,6 +27,7 @@ if args.adjoint:
 else:
     from paddlexde.functional import odeint
 
+paddle.seed(3407)
 true_y0 = paddle.to_tensor([[2., 0.]])
 t = paddle.linspace(0., 25., args.data_size)
 true_A = paddle.to_tensor([[-0.1, 2.0], [-2.0, -0.1]])
@@ -173,7 +174,7 @@ if __name__ == '__main__':
 
         if itr % args.test_freq == 0:
             with paddle.no_grad():
-                pred_y = odeint(func, true_y0, t, solver=Bosh3)
+                pred_y = odeint(func, true_y0, t, solver=RK4)
                 loss = paddle.mean(paddle.abs(pred_y - true_y))
                 print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
                 visualize(true_y, pred_y, func, ii)
