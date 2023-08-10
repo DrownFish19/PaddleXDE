@@ -1,6 +1,7 @@
 import math
-import paddle
+
 import matplotlib.pyplot as plt
+import paddle
 
 
 def get_data(num_timepoints=100):

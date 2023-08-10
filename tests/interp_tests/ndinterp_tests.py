@@ -1,6 +1,7 @@
 import pytest
+from paddlexde.utils.interpolation import CubicSpline, LinearInterpolation
+
 from .data_generate import get_data
-from paddlexde.utils.interpolation import LinearInterpolation, CubicSpline
 
 
 @pytest.mark.interp_linear_tests

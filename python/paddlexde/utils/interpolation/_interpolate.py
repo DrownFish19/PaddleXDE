@@ -1,4 +1,5 @@
 import paddle
+
 from .interpnd import NDInterpolationBase
 
 
