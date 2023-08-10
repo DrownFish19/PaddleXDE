@@ -42,16 +42,16 @@ class LinearInterpolation(NDInterpolationBase):
         # clamp because t may go outside of [t[0], t[-1]]; this is fine
         index = (paddle.bucketize(t.detach(), self._t.detach()) - 1).clip(0, maxlen)
         # will never access the last element of self._t; this is correct behaviour
-        fractional_part = t - self._t[index]
+        fractional_part = t - self._t[index : index + 1]
         return fractional_part, index
 
     def evaluate(self, t):
         fractional_part, index = self.interpolate(t)
         fractional_part = fractional_part.unsqueeze(-1)
-        prev_coeff = self._coeffs[..., int(index), :]
-        next_coeff = self._coeffs[..., int(index) + 1, :]
-        prev_t = self._t[index]
-        next_t = self._t[index + 1]
+        prev_coeff = self._coeffs[..., index : index + 1, :].squeeze(-2)
+        next_coeff = self._coeffs[..., index + 1 : index + 2, :].squeeze(-2)
+        prev_t = self._t[index : index + 1]
+        next_t = self._t[index + 1 : index + 2]
         diff_t = next_t - prev_t
         return prev_coeff + fractional_part * (
             next_coeff - prev_coeff
