@@ -6,10 +6,10 @@ repos:
     -   id: black
         files: \.(py|pyi)$
         additional_dependencies: [toml]
-# -   repo: https://github.com/PyCQA/isort
-#     rev: 5.11.5
-#     hooks:
-#     -   id: isort
+-   repo: https://github.com/PyCQA/isort
+    rev: 5.11.5
+    hooks:
+    -   id: isort
 -   repo: https://github.com/PyCQA/flake8
     rev: 4.0.1
     hooks:
