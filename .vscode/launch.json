@@ -5,17 +5,17 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python: Current File",
+            "name": "ndinterp_tests",
             "type": "python",
             "request": "launch",
-            "program": "${file}",
+            "program": "/root/opt/paddlexde/tests/interp_tests/ndinterp_tests.py",
             "console": "integratedTerminal",
             "justMyCode": false,
             "args" : [
             ],
             "env": {
                 "CUDA_VISIBLE_DEVICES": "0",
-                "PYTHONPATH":"${workspaceFolder}",
+                "PYTHONPATH":"${workspaceFolder}/python/",
             }
         }
 

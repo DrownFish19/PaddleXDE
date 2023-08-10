@@ -1,7 +1,6 @@
 import pytest
+from data_generate import get_data
 from paddlexde.utils.interpolation import CubicSpline, LinearInterpolation
-
-from .data_generate import get_data
 
 
 @pytest.mark.interp_linear_tests
@@ -20,3 +19,7 @@ def test_cubic_interp():
     X0 = X.evaluate(X.interval[0])
     print(X0)
     # assert paddle.allclose(sol, y, rtol=4e-3)
+
+
+test_linear_interp()
+# test_cubic_interp()
