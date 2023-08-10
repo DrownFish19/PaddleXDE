@@ -11,6 +11,13 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "justMyCode": false,
+            "args" : [
+            ],
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+                "PYTHONPATH":"${workspaceFolder}",
+            }
         }
+
     ]
 }

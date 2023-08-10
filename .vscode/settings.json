@@ -1,6 +1,5 @@
 {
-    "python.envFile": "${workspaceFolder}/dev.env",
-    // "python.analysis.extraPaths": [
-    //     "./python"
-    // ],
+    "python.analysis.extraPaths": [
+        "./paddelexde"
+    ],
 }
