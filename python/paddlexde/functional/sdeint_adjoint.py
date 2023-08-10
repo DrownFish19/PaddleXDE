@@ -131,7 +131,7 @@ class SdeintAdjointMethod(paddle.autograd.PyLayer):
                     for param, vjp_param in zip(adjoint_params, vjp_params)
                 ]
 
-                return vjp_t, func_eval, vjp_y, *vjp_params
+                return (vjp_t, func_eval, vjp_y, *vjp_params)
 
             def augmented_diffusion(t, y_aug):
                 # Dynamics of the original system augmented with
@@ -168,7 +168,7 @@ class SdeintAdjointMethod(paddle.autograd.PyLayer):
                     for param, vjp_param in zip(adjoint_params, vjp_params)
                 ]
 
-                return vjp_t, func_eval, vjp_y, *vjp_params
+                return (vjp_t, func_eval, vjp_y, *vjp_params)
 
             ##################################
             #       Solve adjoint ODE        #

@@ -121,7 +121,7 @@ class OdeintAdjointMethod(paddle.autograd.PyLayer):
                     for param, vjp_param in zip(adjoint_params, vjp_params)
                 ]
 
-                return vjp_t, func_eval, vjp_y, *vjp_params
+                return (vjp_t, func_eval, vjp_y, *vjp_params)
 
             ##################################
             #       Solve adjoint ODE        #
