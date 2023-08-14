@@ -3,7 +3,7 @@ import abc
 from paddle import nn
 
 
-class NDInterpolationBase(nn.Layer, metaclass=abc.ABCMeta):
+class InterpolationBase(nn.Layer, metaclass=abc.ABCMeta):
     @property
     @abc.abstractmethod
     def grid_points(self):
