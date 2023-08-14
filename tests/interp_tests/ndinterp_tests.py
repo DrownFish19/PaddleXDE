@@ -29,4 +29,3 @@ def test_cubic_interp():
 
 
 test_linear_interp()
-# test_cubic_interp()
