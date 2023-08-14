@@ -100,14 +100,13 @@ class CubicHermiteSpline(NDInterpolationBase):
         self.register_buffer("_series", series)
         self.register_buffer("_derivs", derivs)
 
-    def Ts(self, t, der=False):
+    def ts(self, t, der=False, z=1.0):
+        t = z * t
         # 判断是否是微分过程
         if not der:
-            ts = [t**3, t**2, t, 1]
+            return paddle.to_tensor([t**3, t**2, t, 1]).unsqueeze(-1)  # [1, 4]
         else:
-            ts = [3 * t**2, 2 * t, 1, 0]
-
-        return paddle.to_tensor(ts)
+            paddle.to_tensor([3 * t**2, 2 * t, 1, 0]).unsqueeze(-1)  # [1, 4]
 
     def interpolate(self, t):
         t = paddle.to_tensor(t, dtype=self._derivs.dtype)
@@ -120,6 +119,8 @@ class CubicHermiteSpline(NDInterpolationBase):
 
     def evaluate(self, t):
         fractional_part, index = self.interpolate(t)
+        # p_tensor =
+
         fractional_part = fractional_part.unsqueeze(-1)
         prev_coeff = self._coeffs[..., index : index + 1, :].squeeze(-2)
         next_coeff = self._coeffs[..., index + 1 : index + 2, :].squeeze(-2)
