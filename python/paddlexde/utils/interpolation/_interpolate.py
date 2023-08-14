@@ -62,8 +62,8 @@ class LinearInterpolation(NDInterpolationBase):
         deriv = self._derivs[..., index, :]
         return deriv
 
+
 class CubicHermiteSpline(NDInterpolationBase):
-    
     def __init__(self, series, t=None, **kwargs):
         """_summary_
 
@@ -88,25 +88,27 @@ class CubicHermiteSpline(NDInterpolationBase):
         h = paddle.sparse.sparse_coo_tensor(indices, values, dense_shape)
 
         # build cubic hermite spline P
-        derivs = (series[..., 1:, :] - series[..., :-1, :]) / (t[1:] - t[:-1])  # [B, T-1, D]
-        derivs = paddle.concat([derivs, derivs[..., -1:, :]], axis=-2)  # [B T D] # 最后一个点的梯度采用上一个点的梯度
-        
+        derivs = (series[..., 1:, :] - series[..., :-1, :]) / (
+            t[1:] - t[:-1]
+        )  # [B, T-1, D]
+        derivs = paddle.concat(
+            [derivs, derivs[..., -1:, :]], axis=-2
+        )  # [B T D] # 最后一个点的梯度采用上一个点的梯度
+
         self.register_buffer("_t", t)
         self.register_buffer("_h", h)
         self.register_buffer("_series", series)
         self.register_buffer("_derivs", derivs)
 
-
-    def Ts(self,t, der=False):
+    def Ts(self, t, der=False):
         # 判断是否是微分过程
         if not der:
-            ts = [t**3,t**2,t,1]
-        else :
-            ts = [3*t**2,2*t,1,0]
-        
+            ts = [t**3, t**2, t, 1]
+        else:
+            ts = [3 * t**2, 2 * t, 1, 0]
+
         return paddle.to_tensor(ts)
-    
-    
+
     def interpolate(self, t):
         t = paddle.to_tensor(t, dtype=self._derivs.dtype)
         maxlen = self._derivs.shape[-2] - 1
@@ -132,11 +134,8 @@ class CubicHermiteSpline(NDInterpolationBase):
         fractional_part, index = self.interpolate(t)
         deriv = self._derivs[..., index, :]
         return deriv
-    
-    
-    
+
+
 chp = CubicHermiteSpline()
 
 print(chp.h.to_dense())
-        
-        
