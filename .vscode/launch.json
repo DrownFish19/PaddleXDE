@@ -8,7 +8,7 @@
             "name": "ndinterp_tests",
             "type": "python",
             "request": "launch",
-            "program": "/root/opt/paddlexde/tests/interp_tests/ndinterp_tests.py",
+            "program": "${file}",
             "console": "integratedTerminal",
             "justMyCode": false,
             "args" : [
