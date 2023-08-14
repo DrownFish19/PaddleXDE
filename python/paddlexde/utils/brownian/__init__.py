@@ -14,4 +14,4 @@
 
 from .brownian_base import BaseBrownian
 from .brownian_interval import BrownianInterval
-from .derived import ReverseBrownian, BrownianPath, BrownianTree, brownian_interval_like
+from .derived import BrownianPath, BrownianTree, ReverseBrownian, brownian_interval_like

@@ -6,12 +6,7 @@ from ..types import Tensor
 
 
 class AdaptiveSolver(metaclass=abc.ABCMeta):
-    def __init__(self,
-                 xde,
-                 dtype: type,
-                 y0: Tensor,
-                 norm,
-                 **unused_kwargs):
+    def __init__(self, xde, dtype: type, y0: Tensor, norm, **unused_kwargs):
         self.dtype = dtype
         self.y0 = y0
         self.norm = norm
@@ -74,7 +69,7 @@ class AdaptiveSolver(metaclass=abc.ABCMeta):
         if d1 <= 1e-15 and d2 <= 1e-15:
             h1 = paddle.max(paddle.to_tensor(1e-6, dtype=dtype), h0 * 1e-3)
         else:
-            h1 = (0.01 / max(d1, d2)) ** (1. / float(order + 1))
+            h1 = (0.01 / max(d1, d2)) ** (1.0 / float(order + 1))
         h1 = h1.abs()
 
-        return paddle.fmin(100. * h0, h1).astype(t_dtype)
+        return paddle.fmin(100.0 * h0, h1).astype(t_dtype)

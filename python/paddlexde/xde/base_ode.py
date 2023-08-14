@@ -1,14 +1,12 @@
 import paddle
 
-from .base_xde import BaseXDE
 from ..types import LayerOrFunction, TupleOrTensor
 from ..utils.misc import flat_to_shape
+from .base_xde import BaseXDE
 
 
 class BaseODE(BaseXDE):
-    """Base class for all ODEs.
-
-    """
+    """Base class for all ODEs."""
 
     def __init__(self, func: LayerOrFunction, y0: TupleOrTensor, t):
         super(BaseODE, self).__init__(name="ODE", var_nums=1, y0=y0, t=t)
@@ -26,7 +24,12 @@ class BaseODE(BaseXDE):
         return paddle.stack([dy])
 
     def fuse(self, dy, dt, y0):
-        return dy[0] * dt + y0
+        # 测试是否存在振动
+        y = dy[0] * dt + y0
+        _lambda = 0.001
+        return (dy[0] - _lambda * y) * dt + y0
+
+        # return dy[0] * dt + y0
 
     def get_dy(self, dy):
         return dy[0]

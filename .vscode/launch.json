@@ -5,12 +5,19 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python: Current File",
+            "name": "ndinterp_tests",
             "type": "python",
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
-            "justMyCode": true
+            "justMyCode": false,
+            "args" : [
+            ],
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+                "PYTHONPATH":"${workspaceFolder}/python/",
+            }
         }
+
     ]
 }
