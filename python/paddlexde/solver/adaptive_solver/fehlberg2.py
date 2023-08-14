@@ -1,13 +1,12 @@
 import paddle
 
-from ..base_adaptive_solver_rk import AdaptiveRKSolver, _ButcherTableau
+from ..base_adaptive_solver_rk import _ButcherTableau, AdaptiveRKSolver
 
 _FEHLBERG2_TABLEAU = _ButcherTableau(
     alpha=paddle.to_tensor([1 / 2, 1.0], dtype=paddle.float64),
-    beta=[
-        paddle.to_tensor([1 / 2], dtype=paddle.float64),
-        paddle.to_tensor([1 / 256, 255 / 256], dtype=paddle.float64),
-    ],
+    beta=[paddle.to_tensor([1 / 2], dtype=paddle.float64),
+          paddle.to_tensor([1 / 256, 255 / 256], dtype=paddle.float64),
+          ],
     c_sol=paddle.to_tensor([1 / 512, 255 / 256, 1 / 512], dtype=paddle.float64),
     c_error=paddle.to_tensor([-1 / 512, 0, 1 / 512], dtype=paddle.float64),
 )

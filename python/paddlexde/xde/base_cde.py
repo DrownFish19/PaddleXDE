@@ -1,9 +1,11 @@
-from ..types import Layer
 from .base_xde import BaseXDE
+from ..types import Layer
 
 
 class BaseCDE(BaseXDE):
-    """Base class for all CDEs."""
+    """Base class for all CDEs.
+
+    """
 
     def __init__(self, f: Layer, dts):
         super(BaseCDE, self).__init__(name="CDE", var_nums=1)

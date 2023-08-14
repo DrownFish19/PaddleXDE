@@ -10,12 +10,12 @@ def _rms_norm(tensor):
 
 
 def _zero_norm(tensor):
-    return 0.0
+    return 0.
 
 
 def _mixed_norm(tensor_tuple):
     if len(tensor_tuple) == 0:
-        return 0.0
+        return 0.
     return max([_rms_norm(tensor) for tensor in tensor_tuple])
 
 
@@ -62,9 +62,7 @@ def interp_evaluate(coefficients, t0, t1, t):
         Polynomial interpolation of the coefficients at time `t`.
     """
 
-    assert (t0 <= t) & (
-        t <= t1
-    ), "invalid interpolation, fails `t0 <= t <= t1`: {}, {}, {}".format(t0, t, t1)
+    assert (t0 <= t) & (t <= t1), 'invalid interpolation, fails `t0 <= t <= t1`: {}, {}, {}'.format(t0, t, t1)
     x = (t - t0) / (t1 - t0)
     x = x.astype(coefficients[0].dtype)
 
@@ -91,9 +89,7 @@ def optimal_step_size(last_step, error_ratio, safety, ifactor, dfactor, order):
         dfactor = paddle.to_tensor(1, dtype=last_step.dtype)
     error_ratio = error_ratio.astype(last_step.dtype)
     exponent = paddle.to_tensor(order, dtype=last_step.dtype).reciprocal()
-    factor = paddle.fmin(
-        ifactor, paddle.fmax(safety / error_ratio**exponent, dfactor)
-    )
+    factor = paddle.fmin(ifactor, paddle.fmax(safety / error_ratio ** exponent, dfactor))
     return last_step * factor
 
 

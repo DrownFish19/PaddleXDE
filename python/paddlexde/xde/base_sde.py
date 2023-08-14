@@ -1,22 +1,17 @@
 import paddle
 
+from .base_xde import BaseXDE
 from ..types import LayerOrFunction, TupleOrTensor
 from ..utils.brownian import BrownianInterval
 from ..utils.misc import flat_to_shape
-from .base_xde import BaseXDE
 
 
 class BaseSDE(BaseXDE):
-    """Base class for all ODEs."""
+    """Base class for all ODEs.
 
-    def __init__(
-        self,
-        f: LayerOrFunction,
-        g: LayerOrFunction,
-        y0: TupleOrTensor,
-        t,
-        reverse=False,
-    ):
+    """
+
+    def __init__(self, f: LayerOrFunction, g: LayerOrFunction, y0: TupleOrTensor, t, reverse=False):
         super(BaseSDE, self).__init__(name="SDE", var_nums=2, y0=y0, t=t)
         self.f = f
         self.g = g
@@ -28,9 +23,7 @@ class BaseSDE(BaseXDE):
             self.batch_size = y0.shape[0]
             self.state_size = y0.shape[1]
 
-        self.bm = BrownianInterval(
-            t0=t[0], t1=t[-1], size=(self.batch_size, self.state_size)
-        )
+        self.bm = BrownianInterval(t0=t[0], t1=t[-1], size=(self.batch_size, self.state_size))
         if reverse:
             t.clip(0)
 

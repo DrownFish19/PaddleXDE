@@ -1,7 +1,8 @@
-from abc import ABC, abstractmethod
+from abc import abstractmethod, ABC
 
 import paddle
 import paddle.nn as nn
+
 from paddlexde.types import TupleOrTensor
 from paddlexde.utils.misc import flat_to_shape
 

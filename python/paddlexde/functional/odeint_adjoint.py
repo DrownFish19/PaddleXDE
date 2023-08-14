@@ -3,30 +3,16 @@ import warnings
 import paddle
 import paddle.nn as nn
 
+from .odeint import odeint
 from ..utils.misc import flat_to_shape
 from ..utils.ode_utils import _mixed_norm, _rms_norm
-from .odeint import odeint
 
 
 class OdeintAdjointMethod(paddle.autograd.PyLayer):
+
     @staticmethod
-    def forward(
-        ctx,
-        func,
-        y0,
-        t,
-        rtol,
-        atol,
-        method,
-        options,
-        event_fn,
-        adjoint_rtol,
-        adjoint_atol,
-        adjoint_method,
-        adjoint_options,
-        t_requires_grad,
-        *adjoint_params,
-    ):
+    def forward(ctx, func, y0, t, rtol, atol, method, options, event_fn, adjoint_rtol, adjoint_atol, adjoint_method, adjoint_options, t_requires_grad,
+                *adjoint_params):
 
         ctx.func = func
         ctx.adjoint_rtol = adjoint_rtol
@@ -36,9 +22,7 @@ class OdeintAdjointMethod(paddle.autograd.PyLayer):
         ctx.t_requires_grad = t_requires_grad
 
         with paddle.no_grad():
-            ans = odeint(
-                func, y0, t, solver=method, rtol=rtol, atol=atol, options=options
-            )
+            ans = odeint(func, y0, t, solver=method, rtol=rtol, atol=atol, options=options)
             ctx.save_for_backward(t, ans, *adjoint_params)
 
         return ans
@@ -46,7 +30,7 @@ class OdeintAdjointMethod(paddle.autograd.PyLayer):
     @staticmethod
     def backward(ctx, grad_y):
         """
-        因为不包含event模式, ans仅为solution
+        因为不包含event模式，ans仅为solition
         所以直接使用grad_y即可对应forward输出tensor的梯度
         :param ctx:
         :param grad_y:
@@ -72,14 +56,8 @@ class OdeintAdjointMethod(paddle.autograd.PyLayer):
             ##################################
 
             # [-1] because y and grad_y are both of shape (len(t), *y0.shape) 初始状态为最后一个时刻的数据和梯度
-            aug_state = [
-                paddle.zeros([], dtype=y.dtype),
-                y[-1],
-                grad_y[-1],
-            ]  # vjp_t, y, vjp_y
-            aug_state.extend(
-                [paddle.zeros_like(param) for param in adjoint_params]
-            )  # vjp_params
+            aug_state = [paddle.zeros([], dtype=y.dtype), y[-1], grad_y[-1]]  # vjp_t, y, vjp_y
+            aug_state.extend([paddle.zeros_like(param) for param in adjoint_params])  # vjp_params
 
             ##################################
             #    Set up backward ODE func    #
@@ -110,18 +88,15 @@ class OdeintAdjointMethod(paddle.autograd.PyLayer):
                         inputs=(t, y) + adjoint_params,
                         grad_outputs=-adj_y,
                         allow_unused=True,
-                        retain_graph=True,
-                    )
+                        retain_graph=True)
 
                 # autograd.grad returns None if no gradient, set to zero.
                 vjp_t = paddle.zeros_like(t) if vjp_t is None else vjp_t
                 vjp_y = paddle.zeros_like(y) if vjp_y is None else vjp_y
-                vjp_params = [
-                    paddle.zeros_like(param) if vjp_param is None else vjp_param
-                    for param, vjp_param in zip(adjoint_params, vjp_params)
-                ]
+                vjp_params = [paddle.zeros_like(param) if vjp_param is None else vjp_param
+                              for param, vjp_param in zip(adjoint_params, vjp_params)]
 
-                return (vjp_t, func_eval, vjp_y, *vjp_params)
+                return vjp_t, func_eval, vjp_y, *vjp_params
 
             ##################################
             #       Solve adjoint ODE        #
@@ -144,53 +119,30 @@ class OdeintAdjointMethod(paddle.autograd.PyLayer):
                 aug_state = odeint(
                     func=augmented_dynamics,
                     y0=tuple(aug_state),
-                    t=t[i - 1 : i + 1].flip(0),
-                    solver=adjoint_method,
-                    rtol=adjoint_rtol,
-                    atol=adjoint_atol,
-                    options=adjoint_options,
+                    t=t[i - 1:i + 1].flip(0),
+                    solver=adjoint_method, rtol=adjoint_rtol, atol=adjoint_atol, options=adjoint_options
                 )
                 aug_state = [a[1] for a in aug_state]  # extract just the t[i - 1] value
-                aug_state[1] = y[
-                    i - 1
-                ]  # update to use our forward-pass estimate of the state
-                aug_state[2] += grad_y[
-                    i - 1
-                ]  # update any gradients wrt state at this time point
+                aug_state[1] = y[i - 1]  # update to use our forward-pass estimate of the state
+                aug_state[2] += grad_y[i - 1]  # update any gradients wrt state at this time point
 
             if t_requires_grad:
                 time_vjps[0] = aug_state[0]
 
-            # adj_y = aug_state[2]
+            adj_y = aug_state[2]
             adj_params = aug_state[3:]
 
         return (None, time_vjps, *adj_params)
 
 
-def odeint_adjoint(
-    func: callable,
-    y0,
-    t,
-    *,
-    rtol=1e-7,
-    atol=1e-9,
-    solver=None,
-    options={"norm": _rms_norm},
-    event_fn=None,
-    adjoint_rtol=None,
-    adjoint_atol=None,
-    adjoint_solver=None,
-    adjoint_options=None,
-    adjoint_params=None,
-):
+def odeint_adjoint(func: callable, y0, t, *, rtol=1e-7, atol=1e-9, solver=None, options={'norm': _rms_norm}, event_fn=None,
+                   adjoint_rtol=None, adjoint_atol=None, adjoint_solver=None, adjoint_options=None, adjoint_params=None):
     # We need this in order to access the variables inside this module,
     # since we have no other way of getting variables along the execution path.
     if adjoint_params is None and not isinstance(func, nn.Layer):
-        raise ValueError(
-            "func must be an instance of nn.Module to specify the adjoint parameters; alternatively they "
-            "can be specified explicitly via the `adjoint_params` argument. If there are no parameters "
-            "then it is allowable to set `adjoint_params=()`."
-        )
+        raise ValueError('func must be an instance of nn.Module to specify the adjoint parameters; alternatively they '
+                         'can be specified explicitly via the `adjoint_params` argument. If there are no parameters '
+                         'then it is allowable to set `adjoint_params=()`.')
 
     # Must come before _check_inputs as we don't want to use normalised input (in particular any changes to options)
     if adjoint_rtol is None:
@@ -201,17 +153,11 @@ def odeint_adjoint(
         adjoint_solver = solver
 
     if adjoint_solver != solver and options is not None and adjoint_options is None:
-        raise ValueError(
-            "If `adjoint_method != method` then we cannot infer `adjoint_options` from `options`. So as "
-            "`options` has been passed then `adjoint_options` must be passed as well."
-        )
+        raise ValueError("If `adjoint_method != method` then we cannot infer `adjoint_options` from `options`. So as "
+                         "`options` has been passed then `adjoint_options` must be passed as well.")
 
     if adjoint_options is None:
-        adjoint_options = (
-            {k: v for k, v in options.items() if k != "norm"}
-            if options is not None
-            else {}
-        )
+        adjoint_options = {k: v for k, v in options.items() if k != "norm"} if options is not None else {}
     else:
         # Avoid in-place modifying a user-specified dict.
         adjoint_options = adjoint_options.copy()
@@ -227,32 +173,16 @@ def odeint_adjoint(
     if len(adjoint_params) != oldlen_:
         # Some params were excluded.
         # Issue a warning if a user-specified norm is specified.
-        if "norm" in adjoint_options and callable(adjoint_options["norm"]):
-            warnings.warn(
-                "An adjoint parameter was passed without requiring gradient. For efficiency this will be "
-                "excluded from the adjoint pass, and will not appear as a tensor in the adjoint norm."
-            )
+        if 'norm' in adjoint_options and callable(adjoint_options['norm']):
+            warnings.warn("An adjoint parameter was passed without requiring gradient. For efficiency this will be "
+                          "excluded from the adjoint pass, and will not appear as a tensor in the adjoint norm.")
 
     # Handle the adjoint norm function.
     state_norm = options["norm"]
     handle_adjoint_norm_(adjoint_options, None, state_norm)  # todo:shapes
 
-    solution = OdeintAdjointMethod.apply(
-        func,
-        y0,
-        t,
-        rtol,
-        atol,
-        solver,
-        options,
-        event_fn,
-        adjoint_rtol,
-        adjoint_atol,
-        adjoint_solver,
-        adjoint_options,
-        not t.stop_gradient,
-        *adjoint_params,
-    )  # todo:shapes
+    solution = OdeintAdjointMethod.apply(func, y0, t, rtol, atol, solver, options, event_fn, adjoint_rtol, adjoint_atol,
+                                         adjoint_solver, adjoint_options, not t.stop_gradient, *adjoint_params)  # todo:shapes
 
     return solution
 
@@ -261,14 +191,10 @@ def find_parameters(module):
     assert isinstance(module, nn.Layer)
 
     # If called within DataParallel, parameters won't appear in module.parameters().
-    if getattr(module, "_is_replica", False):
+    if getattr(module, '_is_replica', False):
 
         def find_tensor_attributes(module):
-            tuples = [
-                (k, v)
-                for k, v in module.__dict__.items()
-                if paddle.is_tensor(v) and v.requires_grad
-            ]  # todo  DataParallel
+            tuples = [(k, v) for k, v in module.__dict__.items() if paddle.is_tensor(v) and v.requires_grad]  # todo  DataParallel
             return tuples
 
         gen = module._named_members(get_members_fn=find_tensor_attributes)
@@ -292,13 +218,13 @@ def handle_adjoint_norm_(adjoint_options, shapes, state_norm):
     else:
         # `adjoint_options` was explicitly specified by the user...
         try:
-            adjoint_norm = adjoint_options["norm"]
+            adjoint_norm = adjoint_options['norm']
         except KeyError:
             # ...but they did not specify the norm argument. Back to plan A: use the default norm.
-            adjoint_options["norm"] = default_adjoint_norm
+            adjoint_options['norm'] = default_adjoint_norm
         else:
             # ...and they did specify the norm argument.
-            if adjoint_norm == "seminorm":
+            if adjoint_norm == 'seminorm':
                 # They told us they want to use seminorms. Slight modification to plan A: use the default norm,
                 # but ignore the parameter state
                 def adjoint_seminorm(tensor_tuple):
@@ -306,7 +232,7 @@ def handle_adjoint_norm_(adjoint_options, shapes, state_norm):
                     # (If the state is actually a flattened tuple then this will be unpacked again in state_norm.)
                     return max(t.abs(), state_norm(y), state_norm(adj_y))
 
-                adjoint_options["norm"] = adjoint_seminorm
+                adjoint_options['norm'] = adjoint_seminorm
             else:
                 # And they're using their own custom norm.
                 if shapes is None:
@@ -324,4 +250,4 @@ def handle_adjoint_norm_(adjoint_options, shapes, state_norm):
                         adj_y = flat_to_shape(adj_y, (), shapes)
                         return adjoint_norm((t, *y, *adj_y, *adj_params))
 
-                    adjoint_options["norm"] = _adjoint_norm
+                    adjoint_options['norm'] = _adjoint_norm

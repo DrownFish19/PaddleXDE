@@ -3,18 +3,8 @@ from ..utils.ode_utils import _rms_norm
 from ..xde import BaseSDE
 
 
-def sdeint(
-    drift: callable,
-    diffusion: callable,
-    y0: TupleOrTensor,
-    t,
-    solver,
-    *,
-    rtol=1e-7,
-    atol=1e-9,
-    reverse=False,
-    options: object = {"norm": _rms_norm}
-):
+def sdeint(drift: callable, diffusion: callable, y0: TupleOrTensor, t, solver, *, rtol=1e-7, atol=1e-9, reverse=False,
+           options: object = {'norm': _rms_norm}):
     """Integrate a system of ordinary differential equations.
 
     Solves the initial value problem for a non-stiff system of first order ODEs:

@@ -13,16 +13,14 @@ _one_sixth = 1 / 6
 class FixedSolver(metaclass=abc.ABCMeta):
     order: int
 
-    def __init__(
-        self,
-        xde: BaseXDE,
-        y0: Tensor,
-        step_size: Scalar = None,
-        grid_constructor: object = None,
-        interp: str = "linear",
-        perturb: bool = False,
-        **kwargs,
-    ):
+    def __init__(self,
+                 xde: BaseXDE,
+                 y0: Tensor,
+                 step_size: Scalar = None,
+                 grid_constructor: object = None,
+                 interp: str = "linear",
+                 perturb: bool = False,
+                 **kwargs):
         """API for solvers with possibly adaptive time stepping.
 
         :param xde: BaseXDE, including BaseODE, BaseSDE, BaseCDE and so on.
@@ -40,9 +38,9 @@ class FixedSolver(metaclass=abc.ABCMeta):
         self.interp = interp
         self.perturb = perturb
 
-        self.atol = kwargs["atol"]
-        self.rtol = kwargs["rtol"]
-        self.norm = kwargs["norm"]
+        self.atol = kwargs['atol']
+        self.rtol = kwargs['rtol']
+        self.norm = kwargs['norm']
 
         if step_size is None:
             if grid_constructor is None:
@@ -53,9 +51,7 @@ class FixedSolver(metaclass=abc.ABCMeta):
             if grid_constructor is None:
                 self.grid_constructor = self._grid_constructor_from_step_size(step_size)
             else:
-                raise ValueError(
-                    "step_size and grid_constructor are mutually exclusive arguments."
-                )
+                raise ValueError("step_size and grid_constructor are mutually exclusive arguments.")
 
         self.move = self.xde.move
         self.fuse = self.xde.fuse
@@ -104,9 +100,7 @@ class FixedSolver(metaclass=abc.ABCMeta):
                     solution[j] = self._linear_interp(t0, t1, y0, y1, t[j])
                 elif self.interp == "cubic":
                     _, dy1 = self.step(t1, t1, y1)
-                    solution[j] = self._cubic_hermite_interp(
-                        t0, y0, dy0, t1, y1, dy1, t[j]
-                    )
+                    solution[j] = self._cubic_hermite_interp(t0, y0, dy0, t1, y1, dy1, t[j])
                 else:
                     raise ValueError(f"Unknown interpolation method {self.interp}")
                 j += 1
@@ -121,7 +115,7 @@ class FixedSolver(metaclass=abc.ABCMeta):
         h10 = h * (1 - h) * (1 - h)
         h01 = h * h * (3 - 2 * h)
         h11 = h * h * (h - 1)
-        dt = t1 - t0
+        dt = (t1 - t0)
         return h00 * y0 + h10 * dt * f0 + h01 * y1 + h11 * dt * f1
 
     @staticmethod
@@ -146,12 +140,7 @@ class FixedSolver(metaclass=abc.ABCMeta):
         k3 = self.move(t_half, half_dt, self.fuse(k2, half_dt, y0))
         k4 = self.move(t1, half_dt, self.fuse(k3, dt, y0))
 
-        return (
-            self.fuse(k1, dt, y0)
-            + 2 * self.fuse(k2, dt, y0)
-            + 2 * self.fuse(k3, dt, y0)
-            + self.fuse(k4, dt, y0)
-        ) * _one_sixth
+        return (self.fuse(k1, dt, y0) + 2 * self.fuse(k2, dt, y0) + 2 * self.fuse(k3, dt, y0) + self.fuse(k4, dt, y0)) * _one_sixth
 
     def rk4_alt_step_func(self, t0, t1, y0, f0=None):
         """Smaller error with slightly more compute."""
@@ -168,20 +157,7 @@ class FixedSolver(metaclass=abc.ABCMeta):
             k1 = self.move(t0, dt, y0)
 
         k2 = self.move(t_one_third, dt_one_third, self.fuse(k1, dt_one_third, y0))
-        k3 = self.move(
-            t_two_thirds,
-            dt_one_third,
-            self.fuse([n2 - n1 * _one_third for (n1, n2) in zip(k1, k2)], dt, y0),
-        )
-        k4 = self.move(
-            t1,
-            t_one_third,
-            self.fuse([n1 - n2 + n3 for (n1, n2, n3) in zip(k1, k2, k3)], dt, y0),
-        )
+        k3 = self.move(t_two_thirds, dt_one_third, self.fuse([n2 - n1 * _one_third for (n1, n2) in zip(k1, k2)], dt, y0))
+        k4 = self.move(t1, t_one_third, self.fuse([n1 - n2 + n3 for (n1, n2, n3) in zip(k1, k2, k3)], dt, y0))
 
-        return (
-            self.fuse(k1, dt, y0)
-            + 3 * self.fuse(k2, dt, y0)
-            + 3 * self.fuse(k3, dt, y0)
-            + self.fuse(k4, dt, y0)
-        ) * 0.125
+        return (self.fuse(k1, dt, y0) + 3 * self.fuse(k2, dt, y0) + 3 * self.fuse(k3, dt, y0) + self.fuse(k4, dt, y0)) * 0.125

@@ -2,9 +2,9 @@ import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
 import pytest
+
 from paddlexde.functional import sdeint, sdeint_adjoint
 from paddlexde.solver.adaptive_solver import Fehlberg2
-
 from tests.solver_tests.problems import construct_problem
 
 batch_size, state_size, t_size = 3, 1, 100
@@ -34,12 +34,8 @@ def test_fixed_solver_base_rk4_constant_sdeint():
     # drift = f()
     diffusion = g()
 
-    f, y0, t_points, sol = construct_problem(
-        dtype=paddle.float32, ode="constant", reverse=False
-    )  # todo:修改sde problem创建函数
-    y = sdeint(
-        drift=f, diffusion=diffusion, y0=y0.unsqueeze(-1), t=t_points, solver=Fehlberg2
-    )
+    f, y0, t_points, sol = construct_problem(dtype=paddle.float32, ode="constant", reverse=False)  # todo:修改sde problem创建函数
+    y = sdeint(drift=f, diffusion=diffusion, y0=y0.unsqueeze(-1), t=t_points, solver=Fehlberg2)
     assert paddle.allclose(sol.unsqueeze(-1), y, rtol=4e-3)
 
 
@@ -48,12 +44,9 @@ def test_fixed_solver_base_rk4_constant_sdeint_adjoint():
     # drift = f()
     diffusion = g()
 
-    f, y0, t_points, sol = construct_problem(
-        dtype=paddle.float32, ode="constant", reverse=False
-    )  # todo:修改sde problem创建函数
-    y = sdeint_adjoint(
-        drift=f, diffusion=diffusion, y0=y0.unsqueeze(-1), t=t_points, solver=Fehlberg2
-    )
+    f, y0, t_points, sol = construct_problem(dtype=paddle.float32, ode="constant", reverse=False)  # todo:修改sde problem创建函数
+    y = sdeint_adjoint(drift=f, diffusion=diffusion, y0=y0.unsqueeze(-1), t=t_points, solver=Fehlberg2)
 
-    paddle.autograd.grad(outputs=y, inputs=y0.unsqueeze(-1), allow_unused=True)
+    paddle.autograd.grad(outputs=y,
+                         inputs=y0.unsqueeze(-1),allow_unused=True)
     assert paddle.allclose(sol.unsqueeze(-1), y, rtol=4e-3)
