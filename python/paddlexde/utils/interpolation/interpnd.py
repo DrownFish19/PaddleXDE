@@ -15,7 +15,8 @@ class InterpolationBase(nn.Layer, metaclass=abc.ABCMeta):
                 series.shape[-2] + 1,
                 dtype=series.dtype,
             )
-
+        series = paddle.cast(series, dtype="float32")
+        t = paddle.cast(t, dtype="float32")
         # build cubic hermite spline P
         derivs = (series[..., 1:, :] - series[..., :-1, :]) / (
             t[1:] - t[:-1]
@@ -57,7 +58,9 @@ class InterpolationBase(nn.Layer, metaclass=abc.ABCMeta):
         # clamp because t may go outside of [t[0], t[-1]]; this is fine
         index = (paddle.bucketize(t.detach(), self._t.detach()) - 1).clip(0, maxlen)
         # will never access the last element of self._t; this is correct behaviour
-        diff_t = t - self._t[index : index + 1]  # 计算t和下界的差
+        diff_t = (
+            self._t[index + 1 : index + 2] - self._t[index : index + 1]
+        ).reciprocal()  # 计算t和下界的差
 
         p = self.ps(index)
 
@@ -77,7 +80,9 @@ class InterpolationBase(nn.Layer, metaclass=abc.ABCMeta):
         """
 
         diff_t, p = self.interpolate(t)  # diff_t
-        return self.ts(t, der=False, z=diff_t) @ self.h @ p
+        ts_tensor = self.ts(t, der=False, z=diff_t)
+        result = ts_tensor @ self._h.to_dense() @ p
+        return result
 
     def derivative(self, t):
         """Calculates the derivative of the function at the point t.
@@ -92,7 +97,7 @@ class InterpolationBase(nn.Layer, metaclass=abc.ABCMeta):
             The derivative of the function at the point t.
         """
         diff_t, p = self.interpolate(t)
-        return self.ts(t, der=True, z=diff_t) @ self.h @ p
+        return self.ts(t, der=True, z=diff_t) @ self._h.to_dense() @ p
 
     @abc.abstractmethod
     def ts(self, t, der=False, z=1.0):
