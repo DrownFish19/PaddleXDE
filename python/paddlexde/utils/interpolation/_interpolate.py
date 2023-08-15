@@ -42,14 +42,6 @@ class LinearInterpolation(InterpolationBase):
         self.register_buffer("_coeffs", series)
         self.register_buffer("_derivs", derivs)
 
-    @property
-    def grid_points(self):
-        return self._t
-
-    @property
-    def interval(self):
-        return paddle.stack([self._t[0], self._t[-1]])
-
     def interpolate(self, t):
         t = paddle.to_tensor(t, dtype=self._derivs.dtype)
         maxlen = self._derivs.shape[-2] - 1
@@ -98,15 +90,7 @@ class CubicHermiteSpline(InterpolationBase):
             # will be a tensor of shape (2, 1, 3), corresponding to batch and channel dimensions
             out
         """
-        super(CubicHermiteSpline).__init__()
-
-        if t is None:
-            t = paddle.linspace(
-                0,
-                series.shape[-2],
-                series.shape[-2] + 1,
-                dtype=series.dtype,
-            )
+        super().__init__(series, t, **kwargs)
 
         # build cubic hemite spline matrix H
         indices = [[0, 0, 0, 0, 1, 1, 1, 1, 2, 3], [0, 1, 2, 3, 0, 1, 2, 3, 2, 0]]
@@ -114,18 +98,7 @@ class CubicHermiteSpline(InterpolationBase):
         dense_shape = [4, 4]
         h = paddle.sparse.sparse_coo_tensor(indices, values, dense_shape)
 
-        # build cubic hermite spline P
-        derivs = (series[..., 1:, :] - series[..., :-1, :]) / (
-            t[1:] - t[:-1]
-        )  # [B, T-1, D]
-        derivs = paddle.concat(
-            [derivs, derivs[..., -1:, :]], axis=-2
-        )  # [B T D] # 最后一个点的梯度采用上一个点的梯度
-
-        self._t = t
         self._h = h
-        self._series = series
-        self._derivs = derivs
 
     def ts(self, t, der=False, z=1.0):
         t = z * t
@@ -135,14 +108,7 @@ class CubicHermiteSpline(InterpolationBase):
         else:
             paddle.to_tensor([3 * t**2, 2 * t, 1, 0]).unsqueeze(-1)  # [1, 4]
 
-    def interpolate(self, t):
-        t = paddle.to_tensor(t, dtype=self._derivs.dtype)
-        maxlen = self._derivs.shape[-2] - 1
-        # clamp because t may go outside of [t[0], t[-1]]; this is fine
-        index = (paddle.bucketize(t.detach(), self._t.detach()) - 1).clip(0, maxlen)
-        # will never access the last element of self._t; this is correct behaviour
-        diff_t = t - self._t[index : index + 1]  # 计算t和下界的差
-
+    def ps(self, index):
         p = paddle.concat(
             [
                 self._series[..., index : index + 1, :],
@@ -152,18 +118,4 @@ class CubicHermiteSpline(InterpolationBase):
             ],
             axis=-2,
         )
-
-        return diff_t, p
-
-    def evaluate(self, t):
-        diff_t, p = self.interpolate(t)  # diff_t
-        return self.ts(t, der=False, z=diff_t) @ self.h @ p
-
-    def derivative(self, t):
-        diff_t, p = self.interpolate(t)
-        return self.ts(t, der=True, z=diff_t) @ self.h @ p
-
-
-chp = CubicHermiteSpline()
-
-print(chp.h.to_dense())
+        return p
