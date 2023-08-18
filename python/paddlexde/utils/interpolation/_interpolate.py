@@ -17,14 +17,17 @@ class LinearInterpolation(InterpolationBase):
         Example:
         -----------
         ```
-            # (2, 1) are batch dimensions. 7 is the time dimension (of the same length as t). 3 is the channel dimension.
-            x = paddle.rand(2, 1, 7, 3)
-            coeffs = natural_cubic_coeffs(x)
-            # ...at this point you can save coeffs, put it through PyTorch's Datasets and DataLoaders, etc...
-            spline = CubicSpline(coeffs)
-            point = paddle.tensor(0.4)
-            # will be a tensor of shape (2, 1, 3), corresponding to batch and channel dimensions
-            out
+        series = paddle.stack(
+            [paddle.cast(paddle.arange(0, 2, 0.001), dtype="float32"), paddle.zeros([2000])],
+            axis=-1,
+        ).unsqueeze(0)
+        series = paddle.sin(series)
+        t = paddle.arange(0, 2000, 1)
+
+        chp = LinearInterpolation(series, t)
+        print(chp.evaluate(99))
+        print(chp.derivative(99))
+        ```
         """
         super().__init__(series, t, **kwargs)
 
@@ -36,23 +39,20 @@ class LinearInterpolation(InterpolationBase):
 
         self._h = h
 
-    def ts(self, t, der=False, z=1.0):
-        t = z * t
-        # 判断是否是微分过程
-        if not der:
-            return paddle.concat([t, paddle.to_tensor([1.0])]).unsqueeze(0)  # [1, 4]
+    def ts(self, t, der=False):
+        if not der:  # 判断是否是微分过程
+            t_list = [t, paddle.ones_like(t)]
         else:
-            return paddle.concat(
-                [paddle.to_tensor([1.0]), paddle.to_tensor([0.0])]
-            ).unsqueeze(
-                0
-            )  # [1, 4]
+            t_list = [paddle.ones_like(t), paddle.zeros_like(t)]
+
+        t_tensor = paddle.concat(t_list).unsqueeze(0)
+        return t_tensor  # [1, 4]
 
     def ps(self, index):
         p = paddle.concat(
             [
-                self._series[..., index : index + 1, :],
-                self._series[..., index + 1 : index + 2, :],
+                self._norm_series1[..., index : index + 1, :],
+                self._norm_series2[..., index : index + 1, :],
             ],
             axis=-2,
         )
@@ -71,14 +71,17 @@ class CubicHermiteSpline(InterpolationBase):
         Example:
         -----------
         ```
-            # (2, 1) are batch dimensions. 7 is the time dimension (of the same length as t). 3 is the channel dimension.
-            x = paddle.rand(2, 1, 7, 3)
-            coeffs = natural_cubic_coeffs(x)
-            # ...at this point you can save coeffs, put it through PyTorch's Datasets and DataLoaders, etc...
-            spline = CubicSpline(coeffs)
-            point = paddle.tensor(0.4)
-            # will be a tensor of shape (2, 1, 3), corresponding to batch and channel dimensions
-            out
+        series = paddle.stack(
+            [paddle.cast(paddle.arange(0, 2, 0.001), dtype="float32"), paddle.zeros([2000])],
+            axis=-1,
+        ).unsqueeze(0)
+        series = paddle.sin(series)
+        t = paddle.arange(0, 2000, 1)
+
+        chp = CubicHermiteSpline(series, t)
+        print(chp.evaluate(99))
+        print(chp.derivative(22.2))
+        ```
         """
         super().__init__(series, t, **kwargs)
 
@@ -90,33 +93,26 @@ class CubicHermiteSpline(InterpolationBase):
 
         self._h = h
 
-    def ts(self, t, der=False, z=1.0):
-        t = z * t
-        # 判断是否是微分过程
-        if not der:
-            return paddle.concat(
-                [t**3, t**2, t, paddle.to_tensor([1.0])]
-            ).unsqueeze(
-                0
-            )  # [1, 4]
+    def ts(self, t, der=False):
+        if not der:  # 判断是否是微分过程
+            t_list = [t**3, t**2, t, paddle.ones_like(t)]
         else:
-            return paddle.concat(
-                [3 * t**2, 2 * t, paddle.to_tensor([1.0]), paddle.to_tensor([0.0])]
-            ).unsqueeze(
-                0
-            )  # [1, 4]
+            t_list = [3 * t**2, 2 * t, paddle.ones_like(t), paddle.zeros_like(t)]
+
+        t_tensor = paddle.concat(t_list).unsqueeze(0)
+        return t_tensor  # [1, 4]
 
     def ps(self, index):
-        p = paddle.concat(
+        p_tensor = paddle.concat(
             [
-                self._series[..., index : index + 1, :],
-                self._series[..., index + 1 : index + 2, :],
+                self._norm_series1[..., index : index + 1, :],
+                self._norm_series2[..., index : index + 1, :],
                 self._derivs[..., index : index + 1, :],
                 self._derivs[..., index + 1 : index + 2, :],
             ],
             axis=-2,
         )
-        return p
+        return p_tensor
 
 
 class BezierSpline(InterpolationBase):
@@ -131,14 +127,17 @@ class BezierSpline(InterpolationBase):
         Example:
         -----------
         ```
-            # (2, 1) are batch dimensions. 7 is the time dimension (of the same length as t). 3 is the channel dimension.
-            x = paddle.rand(2, 1, 7, 3)
-            coeffs = natural_cubic_coeffs(x)
-            # ...at this point you can save coeffs, put it through PyTorch's Datasets and DataLoaders, etc...
-            spline = CubicSpline(coeffs)
-            point = paddle.tensor(0.4)
-            # will be a tensor of shape (2, 1, 3), corresponding to batch and channel dimensions
-            out
+        series = paddle.stack(
+            [paddle.cast(paddle.arange(0, 2, 0.001), dtype="float32"), paddle.zeros([2000])],
+            axis=-1,
+        ).unsqueeze(0)
+        series = paddle.sin(series)
+        t = paddle.arange(0, 2000, 1)
+
+        chp = BezierSpline(series, t)
+        print(chp.evaluate(99))
+        print(chp.derivative(22.2))
+        ```
         """
         super().__init__(series, t, **kwargs)
 
@@ -150,30 +149,23 @@ class BezierSpline(InterpolationBase):
 
         self._h = h
 
-    def ts(self, t, der=False, z=1.0):
-        t = z * t
-        # 判断是否是微分过程
-        if not der:
-            return paddle.concat(
-                [t**3, t**2, t, paddle.to_tensor([1.0])]
-            ).unsqueeze(
-                0
-            )  # [1, 4]
+    def ts(self, t, der=False):
+        if not der:  # 判断是否是微分过程
+            t_list = [t**3, t**2, t, paddle.ones_like(t)]
         else:
-            return paddle.concat(
-                [3 * t**2, 2 * t, paddle.to_tensor([1.0]), paddle.to_tensor([0.0])]
-            ).unsqueeze(
-                0
-            )  # [1, 4]
+            t_list = [3 * t**2, 2 * t, paddle.ones_like(t), paddle.zeros_like(t)]
+
+        t_tensor = paddle.concat(t_list).unsqueeze(0)
+        return t_tensor  # [1, 4]
 
     def ps(self, index):
-        p = paddle.concat(
+        p_tensor = paddle.concat(
             [
-                self._series[..., index : index + 1, :],
-                self._series[..., index + 1 : index + 2, :],
-                self._series[..., index + 2 : index + 3, :],
-                self._series[..., index + 3 : index + 4, :],
+                self._norm_series1[..., index : index + 1, :],
+                self._norm_series2[..., index : index + 1, :],
+                self._norm_series3[..., index : index + 1, :],
+                self._norm_series4[..., index : index + 1, :],
             ],
             axis=-2,
         )
-        return p
+        return p_tensor
