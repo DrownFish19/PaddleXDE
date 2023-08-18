@@ -1,5 +1,6 @@
 import paddle
-from _interpolate import BezierSpline, CubicHermiteSpline, LinearInterpolation
+
+from paddlexde import BezierSpline, CubicHermiteSpline, LinearInterpolation
 
 # series = paddle.arange(0, 100, 2).unsqueeze(0).unsqueeze(-1)
 # t = paddle.arange(0, 100, 2)
@@ -12,16 +13,16 @@ series = paddle.sin(series)
 t = paddle.arange(0, 2000, 1)
 
 chp = LinearInterpolation(series, t)
-print(chp.evaluate(99))
-print(chp.derivative(99))
+print(chp.evaluate(23).numpy())
+print(chp.derivative(23.2).numpy())
 
 chp = CubicHermiteSpline(series, t)
-print(chp.evaluate(99))
-print(chp.derivative(22.2))
+print(chp.evaluate(23).numpy())
+print(chp.derivative(23.2).numpy())
 
 chp = BezierSpline(series, t)
-print(chp.evaluate(99))
-print(chp.derivative(22.2))
+print(chp.evaluate(23).numpy())
+print(chp.derivative(23.2).numpy())
 
 import numpy as np
 from scipy.interpolate import CubicHermiteSpline
