@@ -15,7 +15,7 @@
             ],
             "env": {
                 "CUDA_VISIBLE_DEVICES": "0",
-                "PYTHONPATH":"${workspaceFolder}/python/",
+                "PYTHONPATH":"${workspaceFolder}/python",
             }
         }
 
