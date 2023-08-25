@@ -6,10 +6,10 @@ from paddlexde import BezierSpline, CubicHermiteSpline, LinearInterpolation
 # t = paddle.arange(0, 100, 2)
 
 series = paddle.stack(
-    [paddle.cast(paddle.arange(0, 2, 0.001), dtype="float32"), paddle.zeros([2000])],
+    [paddle.cast(paddle.arange(0, 1000, 0.5), dtype="float32"), paddle.zeros([2000])],
     axis=-1,
 ).unsqueeze(0)
-series = paddle.sin(series)
+# series = paddle.sin(series)
 t = paddle.arange(0, 2000, 1)
 
 chp = LinearInterpolation(series, t)
