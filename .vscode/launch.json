@@ -5,10 +5,10 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "ndinterp_tests",
+            "name": "test_interp",
             "type": "python",
             "request": "launch",
-            "program": "${file}",
+            "program": "${workspaceFolder}/tests/interp_tests/test_interp.py",
             "console": "integratedTerminal",
             "justMyCode": false,
             "args" : [
