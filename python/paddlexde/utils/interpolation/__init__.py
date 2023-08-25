@@ -1,1 +1,1 @@
-from ._interpolate import BezierSpline, CubicHermiteSpline, LinearInterpolation
+from .interpolate import BezierSpline, CubicHermiteSpline, LinearInterpolation

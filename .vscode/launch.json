@@ -8,7 +8,7 @@
             "name": "test_interp",
             "type": "python",
             "request": "launch",
-            "program": "${workspaceFolder}/tests/interp_tests/test_interp.py",
+            "program": "${workspaceFolder}/tests/interp_tests/interpolate_tests.py",
             "console": "integratedTerminal",
             "justMyCode": false,
             "args" : [
