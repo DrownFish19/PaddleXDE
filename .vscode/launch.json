@@ -11,13 +11,24 @@
             "program": "${workspaceFolder}/tests/interp_tests/interpolate_tests.py",
             "console": "integratedTerminal",
             "justMyCode": false,
-            "args" : [
-            ],
+            "args": [],
             "env": {
                 "CUDA_VISIBLE_DEVICES": "0",
-                "PYTHONPATH":"${workspaceFolder}/python",
+                "PYTHONPATH": "${workspaceFolder}/python",
             }
-        }
-
+        },
+        {
+            "name": "current",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [],
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+                "PYTHONPATH": "${workspaceFolder}/python",
+            }
+        },
     ]
 }
