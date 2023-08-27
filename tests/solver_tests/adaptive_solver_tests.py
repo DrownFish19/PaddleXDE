@@ -1,5 +1,6 @@
 import paddle
 import pytest
+
 from paddlexde.functional.odeint import odeint
 from paddlexde.solver.adaptive_solver import (
     AdaptiveHeun,
@@ -9,7 +10,7 @@ from paddlexde.solver.adaptive_solver import (
     Fehlberg2,
 )
 
-from tests.solver_tests.problems import construct_problem
+from .problems import construct_problem
 
 
 @pytest.mark.api_adaptive_solver_base

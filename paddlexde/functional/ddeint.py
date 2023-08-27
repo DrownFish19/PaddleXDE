@@ -1,19 +1,20 @@
 from ..types import TupleOrTensor
 from ..utils.ode_utils import _rms_norm
-from ..xde import BaseODE
+from ..xde import BaseDDE
 
 
 def ddeint(
     func: callable,
     y0: TupleOrTensor,
     t,
+    lags,
     solver,
     *,
     rtol=1e-7,
     atol=1e-9,
     options: object = {"norm": _rms_norm}
 ):
-    """Integrate a system of ordinary differential equations.
+    """Integrate a system of delay differential equations.
 
     Solves the initial value problem for a non-stiff system of first order ODEs:
         ```
@@ -22,7 +23,7 @@ def ddeint(
     where y is a Tensor or tuple of Tensors of any shape.
     """
 
-    xde = BaseODE(func, y0=y0, t=t)
+    xde = BaseDDE(func, y0=y0, t=t, lags=lags)
 
     s = solver(xde=xde, y0=xde.y0, rtol=rtol, atol=atol, **options)
     solution = s.integrate(t)

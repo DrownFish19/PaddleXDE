@@ -2,10 +2,11 @@ import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
 import pytest
+
 from paddlexde.functional import sdeint, sdeint_adjoint
 from paddlexde.solver.adaptive_solver import Fehlberg2
 
-from tests.solver_tests.problems import construct_problem
+from .problems import construct_problem
 
 batch_size, state_size, t_size = 3, 1, 100
 ts = paddle.linspace(0, 1, t_size)

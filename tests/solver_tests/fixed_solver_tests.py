@@ -1,8 +1,10 @@
 import paddle
 import pytest
+
 from paddlexde.functional import odeint, odeint_adjoint
 from paddlexde.solver.fixed_solver import RK4, AdamsBashforthMoulton, Euler, Midpoint
-from problems import construct_problem
+
+from .problems import construct_problem
 
 EPS = {paddle.float32: 1e-4, paddle.float64: 1e-12, paddle.complex64: 1e-4}
 

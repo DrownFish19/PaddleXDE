@@ -1,6 +1,7 @@
 import paddle
 import pytest
 from data_generate import get_data
+
 from paddlexde.utils.interpolation import CubicSpline, LinearInterpolation
 
 paddle.device.set_device("cpu")

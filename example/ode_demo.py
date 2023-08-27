@@ -6,6 +6,7 @@ import numpy as np
 import paddle
 import paddle.nn as nn
 import paddle.optimizer as optim
+
 from paddlexde.solver.fixed_solver import RK4
 
 parser = argparse.ArgumentParser("ODE demo")
