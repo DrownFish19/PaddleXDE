@@ -1,4 +1,7 @@
-from ..types import TupleOrTensor
+from typing import Union
+
+import paddle
+
 from ..utils.ode_utils import _rms_norm
 from ..xde import BaseSDE
 
@@ -6,7 +9,7 @@ from ..xde import BaseSDE
 def sdeint(
     drift: callable,
     diffusion: callable,
-    y0: TupleOrTensor,
+    y0: Union[tuple, paddle.Tensor],
     t,
     solver,
     *,

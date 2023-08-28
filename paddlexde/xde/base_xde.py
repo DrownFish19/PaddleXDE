@@ -1,9 +1,9 @@
 from abc import ABC, abstractmethod
+from typing import Union
 
 import paddle
 import paddle.nn as nn
 
-from paddlexde.types import TupleOrTensor
 from paddlexde.utils.misc import flat_to_shape
 
 
@@ -13,7 +13,13 @@ class BaseXDE(ABC, nn.Layer):
     Inheriting from this class ensures `noise_type` and `sde_type` are valid attributes, which the solver depends on.
     """
 
-    def __init__(self, name, var_nums, y0: TupleOrTensor, t):
+    def __init__(
+        self,
+        name,
+        var_nums,
+        y0: Union[tuple, paddle.Tensor],
+        t: Union[list, paddle.Tensor],
+    ):
         super(BaseXDE, self).__init__()
         self.name = name
         self.var_nums = var_nums  # 返回值数量

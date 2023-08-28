@@ -1,16 +1,25 @@
-from ..types import Layer
+from typing import Union
+
+import paddle
+from paddle import nn
+
 from .base_xde import BaseXDE
 
 
 class BaseCDE(BaseXDE):
     """Base class for all CDEs."""
 
-    def __init__(self, f: Layer, dts):
+    def __init__(
+        self,
+        f: Union[nn.Layer, callable],
+        y0: Union[tuple, paddle.Tensor],
+        t: Union[list, paddle.Tensor],
+    ):
         super(BaseCDE, self).__init__(name="CDE", var_nums=1)
         self.X = None
         self.control_gradient = None
         self.f = f
-        self.dts = dts
+        self.t = t
 
     def handle(self, h, ts):
         self.X = h

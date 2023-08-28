@@ -1,9 +1,9 @@
 import bisect
 import collections
+from typing import Union
 
 import paddle
 
-from ..types import Scalar, Tensor
 from ..utils.ode_utils import (
     PaddleAssign,
     compute_error_ratio,
@@ -32,11 +32,11 @@ class AdaptiveRKSolver(AdaptiveSolver):
     def __init__(
         self,
         xde: BaseXDE,
-        y0: Tensor,
-        rtol: Scalar,
-        atol: Scalar,
-        min_step: Scalar = 0,
-        max_step: Scalar = float("inf"),
+        y0: paddle.Tensor,
+        rtol: Union[float, paddle.Tensor],
+        atol: Union[float, paddle.Tensor],
+        min_step: Union[float, paddle.Tensor] = 0,
+        max_step: Union[float, paddle.Tensor] = float("inf"),
         first_step=None,
         step_t=None,
         jump_t=None,

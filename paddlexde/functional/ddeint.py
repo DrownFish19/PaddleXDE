@@ -1,11 +1,14 @@
-from ..types import TupleOrTensor
+from typing import Union
+
+import paddle
+
 from ..utils.ode_utils import _rms_norm
 from ..xde import BaseDDE
 
 
 def ddeint(
     func: callable,
-    y0: TupleOrTensor,
+    y0: Union[tuple, paddle.Tensor],
     t,
     lags,
     solver,

@@ -2,7 +2,6 @@ import abc
 
 import paddle
 
-from ..types import Scalar, Tensor
 from ..xde.base_xde import BaseXDE
 
 _one_third = 1 / 3
@@ -16,8 +15,8 @@ class FixedSolver(metaclass=abc.ABCMeta):
     def __init__(
         self,
         xde: BaseXDE,
-        y0: Tensor,
-        step_size: Scalar = None,
+        y0: paddle.Tensor,
+        step_size: paddle.Tensor = None,
         grid_constructor: object = None,
         interp: str = "linear",
         perturb: bool = False,

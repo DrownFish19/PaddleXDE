@@ -11,11 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 import paddle
 
-from ...types import Scalar, Tensor
 from . import brownian_base, brownian_interval
 
 
@@ -63,7 +62,9 @@ class BrownianPath(brownian_base.BaseBrownian):
             [-0.3889]])
     """
 
-    def __init__(self, t0: Scalar, w0: Tensor, window_size: int = 8):
+    def __init__(
+        self, t0: Union[float, paddle.Tensor], w0: paddle.Tensor, window_size: int = 8
+    ):
         """Initialize Brownian path.
         Arguments:
             t0: Initial time.
@@ -122,10 +123,10 @@ class BrownianTree(brownian_base.BaseBrownian):
 
     def __init__(
         self,
-        t0: Scalar,
-        w0: Tensor,
-        t1: Optional[Scalar] = None,
-        w1: Optional[Tensor] = None,
+        t0: Union[float, paddle.Tensor],
+        w0: paddle.Tensor,
+        t1: Optional[Union[float, paddle.Tensor]] = None,
+        w1: Optional[paddle.Tensor] = None,
         entropy: Optional[int] = None,
         tol: float = 1e-6,
         pool_size: int = 24,
@@ -197,9 +198,9 @@ class BrownianTree(brownian_base.BaseBrownian):
 
 
 def brownian_interval_like(
-    y: Tensor,
-    t0: Optional[Scalar] = 0.0,
-    t1: Optional[Scalar] = 1.0,
+    y: paddle.Tensor,
+    t0: Optional[Union[float, paddle.Tensor]] = 0.0,
+    t1: Optional[Union[float, paddle.Tensor]] = 1.0,
     size: Optional[Tuple[int, ...]] = None,
     dtype: Optional[paddle.dtype] = None,
     **kwargs,
