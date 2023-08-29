@@ -5,19 +5,6 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "test_interp",
-            "type": "python",
-            "request": "launch",
-            "program": "${workspaceFolder}/tests/interp_tests/interpolate_tests.py",
-            "console": "integratedTerminal",
-            "justMyCode": false,
-            "args": [],
-            "env": {
-                "CUDA_VISIBLE_DEVICES": "0",
-                "PYTHONPATH": "${workspaceFolder}/python",
-            }
-        },
-        {
             "name": "current",
             "type": "python",
             "request": "launch",
@@ -27,7 +14,7 @@
             "args": [],
             "env": {
                 "CUDA_VISIBLE_DEVICES": "0",
-                "PYTHONPATH": "${workspaceFolder}/python",
+                "PYTHONPATH": "${workspaceFolder}",
             }
         },
     ]

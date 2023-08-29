@@ -1,6 +1,8 @@
-import paddle
+from typing import Union
 
-from ..types import LayerOrFunction, TupleOrTensor
+import paddle
+from paddle import nn
+
 from ..utils.misc import flat_to_shape
 from .base_xde import BaseXDE
 
@@ -8,7 +10,12 @@ from .base_xde import BaseXDE
 class BaseODE(BaseXDE):
     """Base class for all ODEs."""
 
-    def __init__(self, func: LayerOrFunction, y0: TupleOrTensor, t):
+    def __init__(
+        self,
+        func: Union[nn.Layer, callable],
+        y0: Union[tuple, paddle.Tensor],
+        t: Union[list, paddle.Tensor],
+    ):
         super(BaseODE, self).__init__(name="ODE", var_nums=1, y0=y0, t=t)
         self.func = func
 

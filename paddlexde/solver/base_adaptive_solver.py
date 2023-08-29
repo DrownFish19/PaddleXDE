@@ -2,11 +2,9 @@ import abc
 
 import paddle
 
-from ..types import Tensor
-
 
 class AdaptiveSolver(metaclass=abc.ABCMeta):
-    def __init__(self, xde, dtype: type, y0: Tensor, norm, **unused_kwargs):
+    def __init__(self, xde, dtype: type, y0: paddle.Tensor, norm, **unused_kwargs):
         self.dtype = dtype
         self.y0 = y0
         self.norm = norm

@@ -1,6 +1,8 @@
-import paddle
+from typing import Union
 
-from ..types import LayerOrFunction, TupleOrTensor
+import paddle
+from paddle import nn
+
 from ..utils.brownian import BrownianInterval
 from ..utils.misc import flat_to_shape
 from .base_xde import BaseXDE
@@ -11,10 +13,10 @@ class BaseSDE(BaseXDE):
 
     def __init__(
         self,
-        f: LayerOrFunction,
-        g: LayerOrFunction,
-        y0: TupleOrTensor,
-        t,
+        f: Union[nn.Layer, callable],
+        g: Union[nn.Layer, callable],
+        y0: Union[tuple, paddle.Tensor],
+        t: Union[list, paddle.Tensor],
         reverse=False,
     ):
         super(BaseSDE, self).__init__(name="SDE", var_nums=2, y0=y0, t=t)

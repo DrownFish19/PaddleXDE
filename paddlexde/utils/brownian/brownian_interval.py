@@ -14,19 +14,15 @@
 
 import math
 import warnings
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 import boltons.cacheutils
 import numpy as np
 import paddle
 import trampoline
 
-from ...types import Scalar, Tensor
 from ..sde_settings import LEVY_AREA_APPROXIMATIONS
 from . import brownian_base
-
-# from ..settings import LEVY_AREA_APPROXIMATIONS
-# from ..types import Scalar, Optional, Tuple, Union, Tensor
 
 _rsqrt3 = 1 / math.sqrt(3)
 _r12 = 1 / 12
@@ -111,7 +107,7 @@ def _davie_foster_approximation(W, H, h, levy_area_approximation, get_noise):
         return A
 
 
-def _H_to_U(W: Tensor, H: Tensor, h: float) -> Tensor:
+def _H_to_U(W: paddle.Tensor, H: paddle.Tensor, h: float) -> paddle.Tensor:
     return h * (0.5 * W + H)
 
 
@@ -405,19 +401,19 @@ class BrownianInterval(brownian_base.BaseBrownian, _Interval):
 
     def __init__(
         self,
-        t0: Optional[Scalar] = 0.0,
-        t1: Optional[Scalar] = 1.0,
+        t0: Optional[Union[float, paddle.Tensor]] = 0.0,
+        t1: Optional[Union[float, paddle.Tensor]] = 1.0,
         size: Optional[Tuple[int, ...]] = None,
         dtype: Optional[paddle.dtype] = None,
         entropy: Optional[int] = None,
-        dt: Optional[Scalar] = None,
-        tol: Scalar = 0.0,
+        dt: Optional[Union[float, paddle.Tensor]] = None,
+        tol: Union[float, paddle.Tensor] = 0.0,
         pool_size: int = 8,
         cache_size: Optional[int] = 45,
         halfway_tree: bool = False,
         levy_area_approximation: str = LEVY_AREA_APPROXIMATIONS.none,
-        W: Optional[Tensor] = None,
-        H: Optional[Tensor] = None,
+        W: Optional[paddle.Tensor] = None,
+        H: Optional[paddle.Tensor] = None,
     ):
         """Initialize the Brownian interval.
 
