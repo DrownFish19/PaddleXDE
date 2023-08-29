@@ -518,14 +518,18 @@ class AdamsBashforthMoulton(FixedSolver):
             bashforth_coeffs = (
                 self.bashforth[order].unsqueeze(-1).astype(y0.dtype)
             )  # bashforth is float64 so cast back
-            dy = paddle.sum(paddle.dot(bashforth_coeffs, self.prev_f), axis=0)
+            dy = paddle.sum(
+                paddle.dot(bashforth_coeffs, self.prev_f), axis=0, keepdim=True
+            )
 
             # Adams-Moulton corrector.
             if self.implicit:
                 moulton_coeffs = (
                     self.moulton[order + 1].unsqueeze(-1).astype(y0.dtype)
                 )  # moulton is float64 so cast back
-                delta = paddle.sum(paddle.dot(moulton_coeffs[1:], self.prev_f), axis=0)
+                delta = paddle.sum(
+                    paddle.dot(moulton_coeffs[1:], self.prev_f), axis=0, keepdim=True
+                )
                 converged = False
                 for _ in range(self.max_iters):
                     dy_old = dy
