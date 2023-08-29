@@ -1,4 +1,5 @@
 import abc
+from typing import Union
 
 import paddle
 
@@ -16,7 +17,7 @@ class FixedSolver(metaclass=abc.ABCMeta):
         self,
         xde: BaseXDE,
         y0: paddle.Tensor,
-        step_size: paddle.Tensor = None,
+        step_size: Union[float, paddle.Tensor] = None,
         grid_constructor: object = None,
         interp: str = "linear",
         perturb: bool = False,

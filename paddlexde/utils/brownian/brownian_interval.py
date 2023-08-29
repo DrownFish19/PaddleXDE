@@ -412,8 +412,8 @@ class BrownianInterval(brownian_base.BaseBrownian, _Interval):
         cache_size: Optional[int] = 45,
         halfway_tree: bool = False,
         levy_area_approximation: str = LEVY_AREA_APPROXIMATIONS.none,
-        W: Optional[Union[float, paddle.Tensor]] = None,
-        H: Optional[Union[float, paddle.Tensor]] = None,
+        W: Optional[paddle.Tensor] = None,
+        H: Optional[paddle.Tensor] = None,
     ):
         """Initialize the Brownian interval.
 
