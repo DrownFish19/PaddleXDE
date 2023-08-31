@@ -9,7 +9,7 @@ from ..xde import BaseODE
 def odeint(
     func: callable,
     y0: Union[tuple, paddle.Tensor],
-    t,
+    t_span,
     solver,
     *,
     rtol=1e-7,
@@ -25,10 +25,10 @@ def odeint(
     where y is a Tensor or tuple of Tensors of any shape.
     """
 
-    xde = BaseODE(func, y0=y0, t=t)
+    xde = BaseODE(func, y0=y0, t_span=t_span)
 
     s = solver(xde=xde, y0=xde.y0, rtol=rtol, atol=atol, **options)
-    solution = s.integrate(t)
+    solution = s.integrate(t_span)
 
     solution = xde.format(solution)
 

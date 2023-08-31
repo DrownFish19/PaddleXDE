@@ -14,10 +14,10 @@ class BaseDDE(BaseXDE):
         self,
         func: Union[nn.Layer, callable],
         y0: Union[tuple, paddle.Tensor],
-        t: Union[list, paddle.Tensor],
+        t_span: Union[list, paddle.Tensor],
         lags: Union[list, paddle.Tensor],
     ):
-        super(BaseDDE, self).__init__(name="ODE", var_nums=1, y0=y0, t=t)
+        super(BaseDDE, self).__init__(name="ODE", var_nums=1, y0=y0, t_span=t_span)
 
         self.func = func
         self.lags = lags

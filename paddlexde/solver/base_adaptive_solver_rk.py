@@ -78,17 +78,17 @@ class AdaptiveRKSolver(AdaptiveSolver):
         )
         self.mid = self.mid.astype(dtype=y0.dtype)
 
-    def _before_integrate(self, t):
-        t0 = t[0]
-        f0 = self.move(t[0], t[1] - t[0], self.y0)
+    def _before_integrate(self, t_span):
+        t0 = t_span[0]
+        f0 = self.move(t_span[0], t_span[1] - t_span[0], self.y0)
         if self.first_step is None:
             first_step = self.select_initial_step(
-                t[0], self.y0, self.order - 1, self.rtol, self.atol
+                t_span[0], self.y0, self.order - 1, self.rtol, self.atol
             )
         else:
             first_step = self.first_step
         self.rk_state = _RungeKuttaState(
-            self.y0, self.get_dy(f0), t[0], t[0], first_step, [self.y0] * 5
+            self.y0, self.get_dy(f0), t_span[0], t_span[0], first_step, [self.y0] * 5
         )
 
         # Handle step_t and jump_t arguments.
@@ -107,10 +107,10 @@ class AdaptiveRKSolver(AdaptiveSolver):
         self.step_t = step_t
         self.jump_t = jump_t
         self.next_step_index = min(
-            bisect.bisect(self.step_t.tolist(), t[0]), len(self.step_t) - 1
+            bisect.bisect(self.step_t.tolist(), t_span[0]), len(self.step_t) - 1
         )
         self.next_jump_index = min(
-            bisect.bisect(self.jump_t.tolist(), t[0]), len(self.jump_t) - 1
+            bisect.bisect(self.jump_t.tolist(), t_span[0]), len(self.jump_t) - 1
         )
 
     def step(self, next_t):

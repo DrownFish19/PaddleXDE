@@ -14,7 +14,7 @@ class OdeintAdjointMethod(paddle.autograd.PyLayer):
         ctx,
         func,
         y0,
-        t,
+        t_span,
         rtol,
         atol,
         method,
@@ -37,9 +37,9 @@ class OdeintAdjointMethod(paddle.autograd.PyLayer):
 
         with paddle.no_grad():
             ans = odeint(
-                func, y0, t, solver=method, rtol=rtol, atol=atol, options=options
+                func, y0, t_span, solver=method, rtol=rtol, atol=atol, options=options
             )
-            ctx.save_for_backward(t, ans, *adjoint_params)
+            ctx.save_for_backward(t_span, ans, *adjoint_params)
 
         return ans
 
@@ -63,7 +63,7 @@ class OdeintAdjointMethod(paddle.autograd.PyLayer):
             # Backprop as if integrating up to event time.
             # Does NOT backpropagate through the event time.
 
-            t, y, *adjoint_params = ctx.saved_tensor()
+            t_span, y_ans, *adjoint_params = ctx.saved_tensor()
 
             adjoint_params = tuple(adjoint_params)
 
@@ -73,13 +73,13 @@ class OdeintAdjointMethod(paddle.autograd.PyLayer):
 
             # [-1] because y and grad_y are both of shape (len(t), *y0.shape) 初始状态为最后一个时刻的数据和梯度
             aug_state = [
-                paddle.zeros([], dtype=y.dtype),
-                y[-1],
+                paddle.zeros([], dtype=y_ans.dtype),
+                y_ans[-1],
                 grad_y[-1],
-            ]  # vjp_t, y, vjp_y
+            ]  # grad_t, y, grad_y
             aug_state.extend(
                 [paddle.zeros_like(param) for param in adjoint_params]
-            )  # vjp_params
+            )  # grad_params
 
             ##################################
             #    Set up backward ODE func    #
@@ -105,7 +105,7 @@ class OdeintAdjointMethod(paddle.autograd.PyLayer):
                     # wrt t here means we won't compute that if we don't need it.
                     func_eval = func(t if t_requires_grad else t_, y)
 
-                    vjp_t, vjp_y, *vjp_params = paddle.autograd.grad(
+                    grad_t, grad_y, *grad_params = paddle.autograd.grad(
                         outputs=func_eval,
                         inputs=(t, y) + adjoint_params,
                         grad_outputs=-adj_y,
@@ -114,44 +114,44 @@ class OdeintAdjointMethod(paddle.autograd.PyLayer):
                     )
 
                 # autograd.grad returns None if no gradient, set to zero.
-                vjp_t = paddle.zeros_like(t) if vjp_t is None else vjp_t
-                vjp_y = paddle.zeros_like(y) if vjp_y is None else vjp_y
-                vjp_params = [
+                grad_t = paddle.zeros_like(t) if grad_t is None else grad_t
+                grad_y = paddle.zeros_like(y) if grad_y is None else grad_y
+                grad_params = [
                     paddle.zeros_like(param) if vjp_param is None else vjp_param
-                    for param, vjp_param in zip(adjoint_params, vjp_params)
+                    for param, vjp_param in zip(adjoint_params, grad_params)
                 ]
 
-                return (vjp_t, func_eval, vjp_y, *vjp_params)
+                return (grad_t, func_eval, grad_y, *grad_params)
 
             ##################################
             #       Solve adjoint ODE        #
             ##################################
 
             if t_requires_grad:
-                time_vjps = paddle.empty([len(t)], dtype=t.dtype)
+                grad_t_span = paddle.empty([len(t_span)], dtype=t_span.dtype)
             else:
-                time_vjps = None
-            for i in range(len(t) - 1, 0, -1):
+                grad_t_span = None
+            for i in range(len(t_span) - 1, 0, -1):
                 if t_requires_grad:
                     # Compute the effect of moving the current time measurement point.
                     # We don't compute this unless we need to, to save some computation.
-                    func_eval = func(t[i], y[i])
+                    func_eval = func(t_span[i], y_ans[i])
                     dLd_cur_t = func_eval.reshape(-1).dot(grad_y[i].reshape(-1))
                     aug_state[0] -= dLd_cur_t
-                    time_vjps[i] = dLd_cur_t
+                    grad_t_span[i] = dLd_cur_t
 
                 # Run the augmented system backwards in time.
                 aug_state = odeint(
                     func=augmented_dynamics,
                     y0=tuple(aug_state),
-                    t=t[i - 1 : i + 1].flip(0),
+                    t_span=t_span[i - 1 : i + 1].flip(0),
                     solver=adjoint_method,
                     rtol=adjoint_rtol,
                     atol=adjoint_atol,
                     options=adjoint_options,
                 )
                 aug_state = [a[1] for a in aug_state]  # extract just the t[i - 1] value
-                aug_state[1] = y[
+                aug_state[1] = y_ans[
                     i - 1
                 ]  # update to use our forward-pass estimate of the state
                 aug_state[2] += grad_y[
@@ -159,18 +159,18 @@ class OdeintAdjointMethod(paddle.autograd.PyLayer):
                 ]  # update any gradients wrt state at this time point
 
             if t_requires_grad:
-                time_vjps[0] = aug_state[0]
+                grad_t_span[0] = aug_state[0]
 
             # adj_y = aug_state[2]
             adj_params = aug_state[3:]
 
-        return (None, time_vjps, *adj_params)
+        return (None, grad_t_span, *adj_params)
 
 
 def odeint_adjoint(
     func: callable,
     y0,
-    t,
+    t_span,
     *,
     rtol=1e-7,
     atol=1e-9,
@@ -240,7 +240,7 @@ def odeint_adjoint(
     solution = OdeintAdjointMethod.apply(
         func,
         y0,
-        t,
+        t_span,
         rtol,
         atol,
         solver,
@@ -250,7 +250,7 @@ def odeint_adjoint(
         adjoint_atol,
         adjoint_solver,
         adjoint_options,
-        not t.stop_gradient,
+        not t_span.stop_gradient,
         *adjoint_params,
     )  # todo:shapes
 

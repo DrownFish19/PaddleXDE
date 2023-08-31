@@ -9,7 +9,7 @@ from ..xde import BaseDDE
 def ddeint(
     func: callable,
     y0: Union[tuple, paddle.Tensor],
-    t,
+    t_span,
     lags,
     solver,
     *,
@@ -26,10 +26,10 @@ def ddeint(
     where y is a Tensor or tuple of Tensors of any shape.
     """
 
-    xde = BaseDDE(func, y0=y0, t=t, lags=lags)
+    xde = BaseDDE(func, y0=y0, t_span=t_span, lags=lags)
 
     s = solver(xde=xde, y0=xde.y0, rtol=rtol, atol=atol, **options)
-    solution = s.integrate(t)
+    solution = s.integrate(t_span)
 
     solution = xde.format(solution)
 

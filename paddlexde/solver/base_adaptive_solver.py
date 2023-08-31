@@ -15,20 +15,20 @@ class AdaptiveSolver(metaclass=abc.ABCMeta):
         self.get_dy = self.xde.get_dy
 
     @abc.abstractmethod
-    def _before_integrate(self, t):
+    def _before_integrate(self, t_span):
         pass
 
     @abc.abstractmethod
     def step(self, next_t):
         raise NotImplementedError
 
-    def integrate(self, t):
-        solution = paddle.empty([len(t), *self.y0.shape], dtype=self.y0.dtype)
+    def integrate(self, t_span):
+        solution = paddle.empty([len(t_span), *self.y0.shape], dtype=self.y0.dtype)
         solution[0] = self.y0
-        t = t.astype(self.dtype)
-        self._before_integrate(t)
-        for i in range(1, len(t)):
-            solution[i] = self.step(t[i])
+        t_span = t_span.astype(self.dtype)
+        self._before_integrate(t_span)
+        for i in range(1, len(t_span)):
+            solution[i] = self.step(t_span[i])
         return solution
 
     def select_initial_step(self, t0, y0, order, rtol, atol, f0=None):

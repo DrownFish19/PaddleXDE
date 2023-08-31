@@ -87,11 +87,11 @@ class FixedSolver(metaclass=abc.ABCMeta):
         """
         pass
 
-    def integrate(self, t):
-        time_grid = self.grid_constructor(self.y0, t)
-        assert time_grid[0] == t[0] and time_grid[-1] == t[-1]
+    def integrate(self, t_span):
+        time_grid = self.grid_constructor(self.y0, t_span)
+        assert time_grid[0] == t_span[0] and time_grid[-1] == t_span[-1]
 
-        solution = paddle.empty([len(t), *self.y0.shape], dtype=self.y0.dtype)
+        solution = paddle.empty([len(t_span), *self.y0.shape], dtype=self.y0.dtype)
         solution[0] = self.y0
 
         j = 1
@@ -99,13 +99,13 @@ class FixedSolver(metaclass=abc.ABCMeta):
         for t0, t1 in zip(time_grid[:-1], time_grid[1:]):
             y1, dy0 = self.step(t0, t1, y0)
 
-            while j < len(t) and t1 >= t[j]:
+            while j < len(t_span) and t1 >= t_span[j]:
                 if self.interp == "linear":
-                    solution[j] = self._linear_interp(t0, t1, y0, y1, t[j])
+                    solution[j] = self._linear_interp(t0, t1, y0, y1, t_span[j])
                 elif self.interp == "cubic":
                     _, dy1 = self.step(t1, t1, y1)
                     solution[j] = self._cubic_hermite_interp(
-                        t0, y0, dy0, t1, y1, dy1, t[j]
+                        t0, y0, dy0, t1, y1, dy1, t_span[j]
                     )
                 else:
                     raise ValueError(f"Unknown interpolation method {self.interp}")

@@ -18,7 +18,7 @@ class BaseXDE(ABC, nn.Layer):
         name,
         var_nums,
         y0: Union[tuple, paddle.Tensor],
-        t: Union[list, paddle.Tensor],
+        t_span: Union[list, paddle.Tensor],
     ):
         super(BaseXDE, self).__init__()
         self.name = name
@@ -36,8 +36,8 @@ class BaseXDE(ABC, nn.Layer):
             self.num_elements = [paddle.numel(y0)]
             self.y0 = y0
 
-        self.t = t
-        self.length = len(t)
+        self.t = t_span
+        self.length = len(t_span)
 
     @abstractmethod
     def handle(self, h, ts):
