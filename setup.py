@@ -1,5 +1,7 @@
 from setuptools import setup
 
+from paddlexde import __version__
+
 
 def main():
 
@@ -17,7 +19,7 @@ def main():
 
     setup(
         name="paddlexde",
-        version="0.1.0",
+        version=__version__,
         description="PaddleXDE is a libarary that helps you build deep learning applications for PaddlePaddle using ordinary differential equations.",
         author="drownfish19",
         author_email="drownfish19@gmail.com",
