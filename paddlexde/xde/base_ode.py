@@ -3,7 +3,7 @@ from typing import Union
 import paddle
 from paddle import nn
 
-from ..utils.misc import flat_to_shape
+from ..utils.input import ModelInputOutput as mio
 from .base_xde import BaseXDE
 
 
@@ -13,30 +13,61 @@ class BaseODE(BaseXDE):
     def __init__(
         self,
         func: Union[nn.Layer, callable],
-        y0: Union[tuple, paddle.Tensor],
-        t_span: Union[list, paddle.Tensor],
     ):
-        super(BaseODE, self).__init__(name="ODE", var_nums=1, y0=y0, t_span=t_span)
+        super(BaseODE, self).__init__(name="ODE")
         self.func = func
 
     def handle(self, h, ts):
         pass
 
-    def move(self, t0, dt, y0):
-        if self.is_tuple:
-            dy = self.func(t0, flat_to_shape(y0, (), self.shapes, self.num_elements))
-            dy = paddle.concat([dy_.reshape([-1]) for dy_ in dy])
-        else:
-            dy = self.func(t0, y0)
-        return paddle.stack([dy])
+    def move(
+        self,
+        t0: Union[float, paddle.Tensor],
+        dt: Union[float, paddle.Tensor],
+        y0: dict,
+    ) -> dict:
+        """_summary_
 
-    def fuse(self, dy, dt, y0):
-        # 测试是否存在振动
-        y = dy[0] * dt + y0
-        _lambda = 0.001
-        return (dy[0] - _lambda * y) * dt + y0
+        Args:
+            t0 (Union[float, paddle.Tensor]): _description_
+            dt (Union[float, paddle.Tensor]): _description_
+            y0 (dict): _description_
 
-        # return dy[0] * dt + y0
+        Returns:
+            dict: _description_
+        """
 
-    def get_dy(self, dy):
-        return dy[0]
+        return self.func(t0, y0)
+
+    def fuse(
+        self,
+        dy: dict,
+        dt: Union[float, paddle.Tensor],
+        y0: dict,
+    ) -> dict:
+        """_summary_
+
+        Args:
+            dy (dict): _description_
+            dt (Union[float, paddle.Tensor]): _description_
+            y0 (dict): _description_
+
+        Returns:
+            dict: _description_
+        """
+        # # 测试是否存在振动
+        # y = mio.get_dy(dy) * dt + mio.get_y0(y0)
+        # _lambda = 0.001
+        # return (mio.get_dy(dy) - _lambda * y) * dt + mio.get_y0(y0)
+
+        _y0 = mio.get_y0(y0)
+        _dy = mio.get_dy(dy)
+
+        y1 = _dy * dt + _y0
+
+        # _d_grad_t = mio.get_d_grad_t(dy)
+        # _d_grad_paras = mio.get_d_grad_paras(dy)
+
+        mio.create_input(y0=y1)
+
+        return
