@@ -15,4 +15,4 @@ class Midpoint(FixedSolver):
         dy = self.move(t_half, dt, y_half)
         y1 = self.fuse(dy, dt, y0)
 
-        return y1, self.get_dy(dy)
+        return y1, dy

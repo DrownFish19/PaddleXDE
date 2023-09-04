@@ -3,6 +3,7 @@ from typing import Union
 
 import paddle
 
+from ..utils.input import ModelInputOutput as mio
 from ..xde.base_xde import BaseXDE
 
 _one_third = 1 / 3
@@ -35,7 +36,7 @@ class FixedSolver(metaclass=abc.ABCMeta):
         """
         self.xde = xde
         self.y0 = y0
-        self.dtype = y0.dtype
+        self.dtype = mio.get_y0(y0).dtype
         self.step_size = step_size
         self.interp = interp
         self.perturb = perturb
@@ -46,7 +47,7 @@ class FixedSolver(metaclass=abc.ABCMeta):
 
         if step_size is None:
             if grid_constructor is None:
-                self.grid_constructor = lambda y0, t: t
+                self.grid_constructor = lambda t: t
             else:
                 self.grid_constructor = grid_constructor
         else:
@@ -59,11 +60,10 @@ class FixedSolver(metaclass=abc.ABCMeta):
 
         self.move = self.xde.move
         self.fuse = self.xde.fuse
-        self.get_dy = self.xde.get_dy
 
     @staticmethod
     def _grid_constructor_from_step_size(step_size):
-        def _grid_constructor(y0, t):
+        def _grid_constructor(t):
             start_time = t[0]
             end_time = t[-1]
 
@@ -88,11 +88,9 @@ class FixedSolver(metaclass=abc.ABCMeta):
         pass
 
     def integrate(self, t_span):
-        time_grid = self.grid_constructor(self.y0, t_span)
+        time_grid = self.grid_constructor(t_span)
         assert time_grid[0] == t_span[0] and time_grid[-1] == t_span[-1]
-
-        solution = paddle.empty([len(t_span), *self.y0.shape], dtype=self.y0.dtype)
-        solution[0] = self.y0
+        solution = [self.y0]
 
         j = 1
         y0 = self.y0
@@ -101,11 +99,11 @@ class FixedSolver(metaclass=abc.ABCMeta):
 
             while j < len(t_span) and t1 >= t_span[j]:
                 if self.interp == "linear":
-                    solution[j] = self._linear_interp(t0, t1, y0, y1, t_span[j])
+                    solution.append(self._linear_interp(t0, t1, y0, y1, t_span[j]))
                 elif self.interp == "cubic":
                     _, dy1 = self.step(t1, t1, y1)
-                    solution[j] = self._cubic_hermite_interp(
-                        t0, y0, dy0, t1, y1, dy1, t_span[j]
+                    solution.append(
+                        self._cubic_hermite_interp(t0, y0, dy0, t1, y1, dy1, t_span[j])
                     )
                 else:
                     raise ValueError(f"Unknown interpolation method {self.interp}")
@@ -117,12 +115,15 @@ class FixedSolver(metaclass=abc.ABCMeta):
     @staticmethod
     def _cubic_hermite_interp(t0, y0, f0, t1, y1, f1, t):
         h = (t - t0) / (t1 - t0)
-        h00 = (1 + 2 * h) * (1 - h) * (1 - h)
-        h10 = h * (1 - h) * (1 - h)
-        h01 = h * h * (3 - 2 * h)
+        h00 = (1.0 + 2.0 * h) * (1.0 - h) * (1.0 - h)
+        h10 = h * (1.0 - h) * (1.0 - h)
+        h01 = h * h * (3.0 - 2.0 * h)
         h11 = h * h * (h - 1)
         dt = t1 - t0
-        return h00 * y0 + h10 * dt * f0 + h01 * y1 + h11 * dt * f1
+        return mio.add(
+            mio.add(mio.mul(y0, h00), mio.mul(f0, h10 * dt)),
+            mio.add(mio.mul(y1, h01), mio(f1, h11 * dt)),
+        )
 
     @staticmethod
     def _linear_interp(t0, t1, y0, y1, t):
@@ -131,7 +132,7 @@ class FixedSolver(metaclass=abc.ABCMeta):
         if t == t1:
             return y1
         slope = (t - t0) / (t1 - t0)
-        return y0 + slope * (y1 - y0)
+        return mio.add(y0, mio.mul(mio.sub(y1, y0), slope))
 
     def rk4_step_func(self, t0, t1, y0, f0=None):
         dt = t1 - t0
@@ -146,12 +147,13 @@ class FixedSolver(metaclass=abc.ABCMeta):
         k3 = self.move(t_half, half_dt, self.fuse(k2, half_dt, y0))
         k4 = self.move(t1, half_dt, self.fuse(k3, dt, y0))
 
-        return (
-            self.fuse(k1, dt, y0)
-            + 2 * self.fuse(k2, dt, y0)
-            + 2 * self.fuse(k3, dt, y0)
-            + self.fuse(k4, dt, y0)
-        ) * _one_sixth
+        res = self.fuse(k1, dt, y0)
+        res = mio.add(res, mio.mul(self.fuse(k2, dt, y0), 2.0))
+        res = mio.add(res, mio.mul(self.fuse(k3, dt, y0), 2.0))
+        res = mio.add(res, self.fuse(k4, dt, y0))
+        res = mio.mul(res, _one_sixth)
+
+        return res
 
     def rk4_alt_step_func(self, t0, t1, y0, f0=None):
         """Smaller error with slightly more compute."""
@@ -168,20 +170,16 @@ class FixedSolver(metaclass=abc.ABCMeta):
             k1 = self.move(t0, dt, y0)
 
         k2 = self.move(t_one_third, dt_one_third, self.fuse(k1, dt_one_third, y0))
-        k3 = self.move(
-            t_two_thirds,
-            dt_one_third,
-            self.fuse([n2 - n1 * _one_third for (n1, n2) in zip(k1, k2)], dt, y0),
-        )
-        k4 = self.move(
-            t1,
-            t_one_third,
-            self.fuse([n1 - n2 + n3 for (n1, n2, n3) in zip(k1, k2, k3)], dt, y0),
-        )
 
-        return (
-            self.fuse(k1, dt, y0)
-            + 3 * self.fuse(k2, dt, y0)
-            + 3 * self.fuse(k3, dt, y0)
-            + self.fuse(k4, dt, y0)
-        ) * 0.125
+        k3 = mio.sub(k2, mio.mul(k1, _one_third))
+        k3 = self.move(t_two_thirds, dt_one_third, self.fuse(k3, dt, y0))
+
+        k4 = mio.add(mio.sub(k1, k2), k3)
+        k4 = self.move(t1, t_one_third, self.fuse(k4, dt, y0))
+
+        res = self.fuse(k1, dt, y0)
+        res = mio.add(res, mio.mul(self.fuse(k2, dt, y0), 3.0))
+        res = mio.add(res, mio.mul(self.fuse(k3, dt, y0), 3.0))
+        res = mio.add(res, self.fuse(k4, dt, y0))
+        res = mio.mul(res, 0.125)
+        return res

@@ -453,6 +453,8 @@ _MIN_ORDER = 4
 _MAX_ORDER = 12
 _MAX_ITERS = 4
 
+# from ...utils import ModelInputOutput as mio
+
 
 class AdamsBashforthMoulton(FixedSolver):
     order = 4
@@ -480,9 +482,8 @@ class AdamsBashforthMoulton(FixedSolver):
                     _MIN_ORDER
                 )
             )
-
-        self.rtol = paddle.to_tensor(rtol, dtype=y0.dtype)
-        self.atol = paddle.to_tensor(atol, dtype=y0.dtype)
+        self.rtol = paddle.to_tensor(rtol, dtype=self.dtype)
+        self.atol = paddle.to_tensor(atol, dtype=self.dtype)
         self.implicit = implicit
         self.max_iters = max_iters
         self.max_order = int(max_order)
@@ -516,7 +517,7 @@ class AdamsBashforthMoulton(FixedSolver):
         else:
             # Adams-Bashforth predictor.
             bashforth_coeffs = (
-                self.bashforth[order].unsqueeze(-1).astype(y0.dtype)
+                self.bashforth[order].unsqueeze(-1).astype(self.dtype)
             )  # bashforth is float64 so cast back
             dy = paddle.sum(
                 paddle.dot(bashforth_coeffs, self.prev_f), axis=0, keepdim=True
@@ -525,7 +526,7 @@ class AdamsBashforthMoulton(FixedSolver):
             # Adams-Moulton corrector.
             if self.implicit:
                 moulton_coeffs = (
-                    self.moulton[order + 1].unsqueeze(-1).astype(y0.dtype)
+                    self.moulton[order + 1].unsqueeze(-1).astype(self.dtype)
                 )  # moulton is float64 so cast back
                 delta = paddle.sum(
                     paddle.dot(moulton_coeffs[1:], self.prev_f), axis=0, keepdim=True
@@ -547,4 +548,4 @@ class AdamsBashforthMoulton(FixedSolver):
                     self.prev_f.pop()
                 # self._update_history(t0, self.get_dy(f))
                 self.prev_f = paddle.concat([f, self.prev_f])[: self.max_order - 1]
-            return self.fuse(dy, dt, y0), self.get_dy(f0)
+            return self.fuse(dy, dt, y0), f0

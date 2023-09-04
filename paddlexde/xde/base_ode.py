@@ -60,14 +60,5 @@ class BaseODE(BaseXDE):
         # _lambda = 0.001
         # return (mio.get_dy(dy) - _lambda * y) * dt + mio.get_y0(y0)
 
-        _y0 = mio.get_y0(y0)
-        _dy = mio.get_dy(dy)
-
-        y1 = _dy * dt + _y0
-
-        # _d_grad_t = mio.get_d_grad_t(dy)
-        # _d_grad_paras = mio.get_d_grad_paras(dy)
-
-        mio.create_input(y0=y1)
-
-        return
+        y1 = mio.add(y0, mio.mul(dy, dt))
+        return y1

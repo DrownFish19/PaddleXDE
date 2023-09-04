@@ -4,6 +4,8 @@ import numpy as np
 import paddle
 import scipy.linalg
 
+from paddlexde.utils import ModelInputOutput as mio
+
 
 class ConstantODE(paddle.nn.Layer):
     def __init__(self):
@@ -20,7 +22,9 @@ class ConstantODE(paddle.nn.Layer):
         )
 
     def forward(self, t, y):
-        return self.a + (y - (self.a * t + self.b)) ** 5
+        y0 = mio.get_y0(y)
+        result = self.a + (y0 - (self.a * t + self.b)) ** 5
+        return mio.create_output(dy=result)
 
     def y_exact(self, t):
         return (self.a * t + self.b).unsqueeze(-1)

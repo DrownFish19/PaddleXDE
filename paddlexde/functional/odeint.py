@@ -25,11 +25,12 @@ def odeint(
     where y is a Tensor or tuple of Tensors of any shape.
     """
 
-    xde = BaseODE(func, y0=y0, t_span=t_span)
+    xde = BaseODE(func)
 
-    s = solver(xde=xde, y0=xde.y0, rtol=rtol, atol=atol, **options)
+    s = solver(xde=xde, y0=y0, rtol=rtol, atol=atol, **options)
     solution = s.integrate(t_span)
 
+    # todo solution 需要二次加工，将相同内容进行合并
     solution = xde.format(solution)
 
     return solution

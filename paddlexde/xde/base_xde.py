@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 
 import paddle.nn as nn
 
-from paddlexde.utils.misc import flat_to_shape
+from ..utils.input import ModelInputOutput as mio
 
 
 class BaseXDE(ABC, nn.Layer):
@@ -51,11 +51,7 @@ class BaseXDE(ABC, nn.Layer):
         pass
 
     def format(self, sol):
-        # todo @DrownFish19
-        if self.is_tuple:
-            return flat_to_shape(sol, (len(self.t),), self.shapes, self.num_elements)
-        else:
-            return sol
+        return mio.stack_op(sol)
 
     def method(self):
         print(f"current method is {self.name}.")
