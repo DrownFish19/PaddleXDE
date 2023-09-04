@@ -1,3 +1,8 @@
+from typing import Union
+
+import paddle
+
+
 def get_variable_name(var):
     return list(dict(abc=var).keys())[0]
 
@@ -7,7 +12,6 @@ class ModelInputOutput:
     # input
     # ode variables (required)
     y0 = "y0"
-    t = "t"
 
     # dde varivales (dde required)
     lags = "lags"
@@ -23,7 +27,6 @@ class ModelInputOutput:
     # output
     # ode variables (required)
     dy = "dy"
-    dt = "dt"
 
     # dde varivales (dde required)
     d_lags = "d_lags"
@@ -35,6 +38,9 @@ class ModelInputOutput:
 
     # dde grad variables
     d_grad_lags = "d_grad_lags"
+
+    y_list = [y0, lags, grad_y, grad_t, grad_paras, grad_lags]
+    dy_list = [dy, d_lags, d_grad_y, d_grad_t, d_grad_paras, d_grad_lags]
 
     @classmethod
     def create_input(cls, y0, **kwargs):
@@ -125,3 +131,55 @@ class ModelInputOutput:
     @classmethod
     def get_d_grad_lags(cls, dic: dict):
         return dic.get(cls.d_grad_lags)
+
+    @classmethod
+    def add(cls, x: dict, y: Union[dict, paddle.Tensor, float]):
+        if isinstance(y, dict):
+            # y0 + dy * dt
+            for k_y, k_dy in zip(cls.y_list, cls.dy_list):
+                x[k_y] += y[k_dy]
+            return x
+
+        if isinstance(y, float) or isinstance(y, paddle.Tensor):
+            for k_y in cls.y_list:
+                x[k_y] += y
+            return x
+
+    @classmethod
+    def sub(cls, x: dict, y: Union[dict, paddle.Tensor, float]):
+        if isinstance(y, dict):
+            # y0 + dy * dt
+            for k_y, k_dy in zip(cls.y_list, cls.dy_list):
+                x[k_y] -= y[k_dy]
+            return x
+
+        if isinstance(y, float) or isinstance(y, paddle.Tensor):
+            for k_y in cls.y_list:
+                x[k_y] -= y
+            return x
+
+    @classmethod
+    def mul(cls, x: dict, y: Union[dict, paddle.Tensor, float]):
+        if isinstance(y, dict):
+            # y0 + dy * dt
+            for k_y, k_dy in zip(cls.y_list, cls.dy_list):
+                x[k_y] *= y[k_dy]
+            return x
+
+        if isinstance(y, float) or isinstance(y, paddle.Tensor):
+            for k_y in cls.y_list:
+                x[k_y] *= y
+            return x
+
+    @classmethod
+    def div(cls, x: dict, y: Union[dict, paddle.Tensor, float]):
+        if isinstance(y, dict):
+            # y0 + dy * dt
+            for k_y, k_dy in zip(cls.y_list, cls.dy_list):
+                x[k_y] /= y[k_dy]
+            return x
+
+        if isinstance(y, float) or isinstance(y, paddle.Tensor):
+            for k_y in cls.y_list:
+                x[k_y] /= y
+            return x
