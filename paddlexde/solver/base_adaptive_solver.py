@@ -2,10 +2,12 @@ import abc
 
 import paddle
 
+from ..utils.input import ModelInputOutput as mio
+
 
 class AdaptiveSolver(metaclass=abc.ABCMeta):
-    def __init__(self, xde, dtype: type, y0: paddle.Tensor, norm, **unused_kwargs):
-        self.dtype = dtype
+    def __init__(self, xde, y0: paddle.Tensor, norm, **unused_kwargs):
+        self.dtype = mio.get_y0(y0).dtype
         self.y0 = y0
         self.norm = norm
 
@@ -42,19 +44,17 @@ class AdaptiveSolver(metaclass=abc.ABCMeta):
                Equations I: Nonstiff Problems", Sec. II.4, 2nd edition.
         """
 
-        dtype = y0.dtype
-        t_dtype = t0.dtype
-
         if f0 is None:
             f0 = self.move(t0, 0, y0)
 
         scale = atol + paddle.abs(y0) * rtol
 
-        d0 = self.norm(y0 / scale).abs()
-        d1 = self.norm(self.get_dy(f0) / scale).abs()
+        # self.norm(y0 / scale).abs()
+        d0 = mio.reduce_self(mio.reduce_self(mio.div(y0, scale), self.norm), paddle.abs)
+        d1 = mio.reduce_self(mio.reduce_self(mio.div(f0, scale), self.norm), paddle.abs)
 
         if d0 < 1e-5 or d1 < 1e-5:
-            h0 = paddle.to_tensor(1e-6, dtype=dtype)
+            h0 = paddle.to_tensor(1e-6, dtype=self.dtype)
         else:
             h0 = 0.01 * d0 / d1
         h0 = h0.abs()
@@ -65,9 +65,9 @@ class AdaptiveSolver(metaclass=abc.ABCMeta):
         d2 = paddle.abs(self.norm((self.get_dy(f1) - self.get_dy(f0)) / scale) / h0)
 
         if d1 <= 1e-15 and d2 <= 1e-15:
-            h1 = paddle.max(paddle.to_tensor(1e-6, dtype=dtype), h0 * 1e-3)
+            h1 = paddle.max(paddle.to_tensor(1e-6, dtype=self.dtype), h0 * 1e-3)
         else:
             h1 = (0.01 / max(d1, d2)) ** (1.0 / float(order + 1))
         h1 = h1.abs()
 
-        return paddle.fmin(100.0 * h0, h1).astype(t_dtype)
+        return paddle.fmin(100.0 * h0, h1).astype(t0.dtype)
