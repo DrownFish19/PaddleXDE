@@ -223,17 +223,51 @@ class ModelInputOutput:
             return res
 
     @classmethod
-    def stack_op(cls, x: list):
-        res = dict()
-        for k in cls._inputs:
+    def stack_op(cls, x: list[dict]):
+        if len(x) < 0:
+            return None
+        x_list = cls._inputs if x[0][cls._type] == cls._input else cls._outputs
+
+        res = dict({cls._type: x[0][cls._type]})
+        for k in x_list:
             res[k] = []
 
         for item in x:
-            for k in cls._inputs:
+            for k in x_list:
                 if item[k] is not None:
                     res[k].append(item[k])
 
-        for k in cls._inputs:
+        for k in x_list:
             res[k] = paddle.stack(res[k]) if len(res[k]) > 0 else None
 
-        return cls.create_input(**res)
+        return res
+
+    @classmethod
+    def reduce_dict(cls, x: dict, y: dict, op, **kwargs):
+        x_list = cls._inputs if x[cls._type] == cls._input else cls._outputs
+        y_list = cls._inputs if y[cls._type] == cls._input else cls._outputs
+
+        res = dict({cls._type: x[cls._type]})
+        for k_x, k_y in zip(x_list, y_list):
+            res[k_x] = (
+                op(x[k_x], y[k_y], **kwargs)
+                if x[k_x] is not None and y[k_y] is not None
+                else None
+            )
+        return res
+
+    @classmethod
+    def reduce_tensor(cls, x: dict, y: paddle.Tensor, op, **kwargs):
+        x_list = cls._inputs if x[cls._type] == cls._input else cls._outputs
+        res = dict({cls._type: x[cls._type]})
+        for k in x_list:
+            res[k] = op(x[k], y, **kwargs) if x[k] is not None else None
+        return res
+
+    @classmethod
+    def reduce_self(cls, x: dict, op, **kwargs):
+        x_list = cls._inputs if x[cls._type] == cls._input else cls._outputs
+        res = dict({cls._type: x[cls._type]})
+        for k in x_list:
+            res[k] = op(x[k], **kwargs) if x[k] is not None else None
+        return res

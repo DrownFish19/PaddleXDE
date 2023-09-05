@@ -1,8 +1,8 @@
-import collections
 import warnings
 
 import paddle
 
+from ...utils.input import ModelInputOutput as mio
 from ...utils.ode_utils import _linf_norm, compute_error_ratio
 from ..base_fixed_solver import FixedSolver
 
@@ -453,8 +453,6 @@ _MIN_ORDER = 4
 _MAX_ORDER = 12
 _MAX_ITERS = 4
 
-# from ...utils import ModelInputOutput as mio
-
 
 class AdamsBashforthMoulton(FixedSolver):
     order = 4
@@ -487,8 +485,7 @@ class AdamsBashforthMoulton(FixedSolver):
         self.implicit = implicit
         self.max_iters = max_iters
         self.max_order = int(max_order)
-        self.prev_f = collections.deque(maxlen=self.max_order - 1)
-        self.prev_f = None
+        self.prev_f = []
         self.prev_t = None
 
         self.bashforth = [x for x in _BASHFORTH_DIVISOR]
@@ -504,23 +501,24 @@ class AdamsBashforthMoulton(FixedSolver):
     def step(self, t0, t1, y0):
         dt = t1 - t0
         f0 = self.move(t0, dt, y0)
-        # self._update_history(t0, self.get_dy(f0))
-        if self.prev_f is None:
-            self.prev_f = f0
-        else:
-            self.prev_f = paddle.concat([f0, self.prev_f])[: self.max_order - 1]
-            # paddle.concat([])
+        self.prev_f = ([f0] + self.prev_f)[: self.max_order - 1]
         order = min(len(self.prev_f), self.max_order - 1)
         if order < _MIN_ORDER - 1:
             # Compute using RK4.
-            return self.rk4_alt_step_func(t0, t1, y0, f0=self.prev_f[0]), f0
+            return self.rk4_alt_step_func(t0, t1, y0, f0=f0), f0
         else:
             # Adams-Bashforth predictor.
+            prev_dy = mio.stack_op(self.prev_f)
+
             bashforth_coeffs = (
                 self.bashforth[order].unsqueeze(-1).astype(self.dtype)
             )  # bashforth is float64 so cast back
-            dy = paddle.sum(
-                paddle.dot(bashforth_coeffs, self.prev_f), axis=0, keepdim=True
+            dy = mio.reduce_tensor(prev_dy, bashforth_coeffs, paddle.dot)
+            dy = mio.reduce_self(
+                dy,
+                paddle.sum,
+                axis=0,
+                keepdim=True,
             )
 
             # Adams-Moulton corrector.
@@ -528,10 +526,15 @@ class AdamsBashforthMoulton(FixedSolver):
                 moulton_coeffs = (
                     self.moulton[order + 1].unsqueeze(-1).astype(self.dtype)
                 )  # moulton is float64 so cast back
-                delta = paddle.sum(
-                    paddle.dot(moulton_coeffs[1:], self.prev_f), axis=0, keepdim=True
+                delta = mio.reduce_tensor(prev_dy, moulton_coeffs[1:], paddle.dot)
+                delta = mio.reduce_self(
+                    delta,
+                    paddle.sum,
+                    axis=0,
+                    keepdim=True,
                 )
                 converged = False
+                # todo modify and test
                 for _ in range(self.max_iters):
                     dy_old = dy
                     f = self.move(t1, dt, self.fuse(dy, dt, y0))

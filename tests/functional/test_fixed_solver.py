@@ -25,15 +25,15 @@ class TestFixedSolversConstantForODE(unittest.TestCase):
         self.xdeints = [odeint]
         self.solvers = [Euler, Midpoint, RK4, AdamsBashforthMoulton]
 
-    # def test_euler(self):
-    #     for xdeint in self.xdeints:
-    #         y = xdeint(self.f, mio.create_input(y0=self.y0), self.t, solver=Euler)
-    #         assert paddle.allclose(self.sol, mio.get_y0(y), rtol=1e-2)
+    def test_euler(self):
+        for xdeint in self.xdeints:
+            y = xdeint(self.f, mio.create_input(y0=self.y0), self.t, solver=Euler)
+            assert paddle.allclose(self.sol, mio.get_y0(y), rtol=1e-2)
 
-    # def test_midpoint(self):
-    #     for xdeint in self.xdeints:
-    #         y = xdeint(self.f, mio.create_input(y0=self.y0), self.t, solver=Midpoint)
-    #         assert paddle.allclose(self.sol, mio.get_y0(y), rtol=1e-2)
+    def test_midpoint(self):
+        for xdeint in self.xdeints:
+            y = xdeint(self.f, mio.create_input(y0=self.y0), self.t, solver=Midpoint)
+            assert paddle.allclose(self.sol, mio.get_y0(y), rtol=1e-2)
 
     def test_rk4(self):
         for xdeint in self.xdeints:
