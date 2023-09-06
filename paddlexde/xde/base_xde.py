@@ -4,8 +4,6 @@ from typing import Union
 import paddle
 import paddle.nn as nn
 
-from paddlexde.utils.misc import flat_to_shape
-
 
 class BaseXDE(ABC, nn.Layer):
     """Base class for all ODEs.
@@ -24,20 +22,21 @@ class BaseXDE(ABC, nn.Layer):
         self.name = name
         self.var_nums = var_nums  # 返回值数量
 
-        if isinstance(y0, tuple):
-            self.is_tuple = True
-            self.shapes = [y0_.shape for y0_ in y0]
-            self.num_elements = [paddle.numel(y0_) for y0_ in y0]
-            self.y0 = paddle.concat([y0_.reshape([-1]) for y0_ in y0])
-
-        else:
-            self.is_tuple = False
-            self.shapes = [y0.shape]
-            self.num_elements = [paddle.numel(y0)]
-            self.y0 = y0
-
-        self.t = t_span
+        self.init_y0(y0)  # shapes, numels, y0
+        self.t_span = t_span
         self.length = len(t_span)
+
+    def init_y0(self, tensors):
+        if isinstance(tensors, tuple) or isinstance(tensors, list):
+            self.shapes = [_tensor.shape for _tensor in tensors]
+            self.num_elements = [paddle.numel(_tensor) for _tensor in tensors]
+            self.y0 = paddle.concat([_tensor.reshape([-1]) for _tensor in tensors])
+        elif isinstance(tensors, paddle.Tensor):
+            self.shapes = [tensors.shape]
+            self.num_elements = [paddle.numel(tensors)]
+            self.y0 = tensors.reshape([-1])
+        else:
+            raise NotImplementedError
 
     @abstractmethod
     def handle(self, h, ts):
@@ -47,7 +46,7 @@ class BaseXDE(ABC, nn.Layer):
         :param ts:
         :return:
         """
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def move(self, t0, dt, y0):
@@ -58,7 +57,7 @@ class BaseXDE(ABC, nn.Layer):
         :param y0:
         :return:
         """
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def fuse(self, dy, dt, y0):
@@ -69,23 +68,44 @@ class BaseXDE(ABC, nn.Layer):
         :param y0:
         :return:
         """
-        pass
-
-    @abstractmethod
-    def get_dy(self, dy):
-        """
-        获取当前的dy
-        :param dy:
-        :return:
-        """
-        pass
+        raise NotImplementedError
 
     def format(self, sol):
-        if self.is_tuple:
-            return flat_to_shape(sol, (len(self.t),), self.shapes, self.num_elements)
-        else:
-            return sol
+        return self.unflatten(sol, self.length)
 
     def method(self):
         print(f"current method is {self.name}.")
         return self.name
+
+    def unflatten(self, tensor, length):
+        if length == 1:
+            return tensor.reshape(self.shapes[0])
+
+        tensors_r = []
+        total = 0
+
+        for shape, num_ele in zip(self.shapes, self.num_elements):
+            next_total = total + num_ele
+            # It's important that this be view((...)), not view(...). Else when length=(), shape=() it fails.
+            if len(shape) == 0:
+                tensors_r.append(tensor[..., total:next_total].reshape((*(length,), 0)))
+            else:
+                tensors_r.append(
+                    tensor[..., total:next_total].reshape((*(length,), *shape))
+                )
+            total = next_total
+        return tuple(tensors_r)
+
+    def flatten(self, tensors):
+        if isinstance(tensors, tuple) or isinstance(tensors, list):
+            tensors_r = paddle.concat([_tensor.reshape([-1]) for _tensor in tensors])
+        elif isinstance(tensors, paddle.Tensor):
+            tensors_r = tensors.reshape([-1])
+        else:
+            raise NotImplementedError
+
+        return tensors_r
+
+    @abstractmethod
+    def call_func(self, **kwargs):
+        raise NotImplementedError

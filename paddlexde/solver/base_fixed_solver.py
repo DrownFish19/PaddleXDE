@@ -59,7 +59,6 @@ class FixedSolver(metaclass=abc.ABCMeta):
 
         self.move = self.xde.move
         self.fuse = self.xde.fuse
-        self.get_dy = self.xde.get_dy
 
     @staticmethod
     def _grid_constructor_from_step_size(step_size):
@@ -85,7 +84,7 @@ class FixedSolver(metaclass=abc.ABCMeta):
         :param y0:
         :return:
         """
-        pass
+        raise NotImplementedError
 
     def integrate(self, t_span):
         time_grid = self.grid_constructor(self.y0, t_span)
@@ -171,12 +170,12 @@ class FixedSolver(metaclass=abc.ABCMeta):
         k3 = self.move(
             t_two_thirds,
             dt_one_third,
-            self.fuse([n2 - n1 * _one_third for (n1, n2) in zip(k1, k2)], dt, y0),
+            self.fuse(k1 - k2 * _one_third, dt, y0),
         )
         k4 = self.move(
             t1,
             t_one_third,
-            self.fuse([n1 - n2 + n3 for (n1, n2, n3) in zip(k1, k2, k3)], dt, y0),
+            self.fuse(k1 - k2 + k3, dt, y0),
         )
 
         return (

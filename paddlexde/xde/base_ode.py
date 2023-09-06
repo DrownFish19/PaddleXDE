@@ -3,7 +3,6 @@ from typing import Union
 import paddle
 from paddle import nn
 
-from ..utils.misc import flat_to_shape
 from .base_xde import BaseXDE
 
 
@@ -23,20 +22,19 @@ class BaseODE(BaseXDE):
         pass
 
     def move(self, t0, dt, y0):
-        if self.is_tuple:
-            dy = self.func(t0, flat_to_shape(y0, (), self.shapes, self.num_elements))
-            dy = paddle.concat([dy_.reshape([-1]) for dy_ in dy])
-        else:
-            dy = self.func(t0, y0)
-        return paddle.stack([dy])
+        dy = self.call_func(t0, y0)
+        return dy
 
     def fuse(self, dy, dt, y0):
         # 测试是否存在振动
-        y = dy[0] * dt + y0
+        y = dy * dt + y0
         _lambda = 0.001
-        return (dy[0] - _lambda * y) * dt + y0
+        return (dy - _lambda * y) * dt + y0
 
-        # return dy[0] * dt + y0
+        # return dy * dt + y0
 
-    def get_dy(self, dy):
-        return dy[0]
+    def call_func(self, t, y0):
+        y0 = self.unflatten(y0, length=1)
+        dy = self.func(t, y0)
+        dy = self.flatten(dy)
+        return dy
