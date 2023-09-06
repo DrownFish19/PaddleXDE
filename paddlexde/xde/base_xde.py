@@ -21,9 +21,7 @@ class BaseXDE(ABC, nn.Layer):
         super(BaseXDE, self).__init__()
         self.name = name
         self.var_nums = var_nums  # 返回值数量
-        # y0输入后全部进行flatten操作，进行展平
-        # 后续计算过程中，如果需要调用func操作，可以通过xde进行输入，在xde中进行unflatten操作，然后将数据传给func
-        # 当全部数据计算结束后，进行unflatten操作，需要注意sol已经增加多个，需要根据数据形状进行展开
+
         self.init_y0(y0)  # shapes, numels, y0
         self.t_span = t_span
         self.length = len(t_span)
