@@ -30,6 +30,6 @@ def odeint(
     s = solver(xde=xde, y0=xde.y0, rtol=rtol, atol=atol, **options)
     solution = s.integrate(t_span)
 
-    solution = xde.format(solution)
+    solution = xde.unflatten(solution, len(t_span))
 
     return solution

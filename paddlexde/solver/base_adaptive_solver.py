@@ -16,7 +16,7 @@ class AdaptiveSolver(metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def _before_integrate(self, t_span):
-        pass
+        raise NotImplementedError
 
     @abc.abstractmethod
     def step(self, next_t):

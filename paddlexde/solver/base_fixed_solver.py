@@ -85,7 +85,7 @@ class FixedSolver(metaclass=abc.ABCMeta):
         :param y0:
         :return:
         """
-        pass
+        raise NotImplementedError
 
     def integrate(self, t_span):
         time_grid = self.grid_constructor(self.y0, t_span)
