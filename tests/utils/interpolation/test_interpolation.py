@@ -2,7 +2,11 @@ import unittest
 
 import paddle
 
-from paddlexde.utils import BezierSpline, CubicHermiteSpline, LinearInterpolation
+from paddlexde.interpolation import (
+    BezierSpline,
+    CubicHermiteSpline,
+    LinearInterpolation,
+)
 
 
 # 固定梯度

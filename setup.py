@@ -8,11 +8,11 @@ def main():
     packages = [
         "paddlexde",
         "paddlexde.functional",
+        "paddlexde.interpolation",
         "paddlexde.solver",
         "paddlexde.solver.adaptive_solver",
         "paddlexde.solver.fixed_solver",
         "paddlexde.utils",
-        "paddlexde.utils.interpolation",
         "paddlexde.utils.brownian",
         "paddlexde.xde",
     ]
