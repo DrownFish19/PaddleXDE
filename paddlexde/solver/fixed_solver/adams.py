@@ -514,17 +514,17 @@ class AdamsBashforthMoulton(FixedSolver):
             return self.rk4_alt_step_func(t0, t1, y0, f0=f0), f0
         else:
             # Adams-Bashforth predictor.
+            # bashforth is float64 so cast back
             bashforth_coeffs = self.bashforth[order]
-            bashforth_coeffs.astype(y0.dtype)  # bashforth is float64 so cast back
+            bashforth_coeffs = bashforth_coeffs.astype(self.dtype)
             dy = paddle.sum(
                 paddle.dot(bashforth_coeffs, self.prev_f), axis=0, keepdim=True
             )
 
             # Adams-Moulton corrector.
             if self.implicit:
-                moulton_coeffs = (
-                    self.moulton[order + 1].unsqueeze(-1).astype(y0.dtype)
-                )  # moulton is float64 so cast back
+                # moulton is float64 so cast back
+                moulton_coeffs = self.moulton[order + 1].astype(self.dtype)
                 delta = paddle.sum(
                     paddle.dot(moulton_coeffs[1:], self.prev_f), axis=0, keepdim=True
                 )

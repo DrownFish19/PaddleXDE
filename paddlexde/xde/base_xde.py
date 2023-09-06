@@ -78,23 +78,18 @@ class BaseXDE(ABC, nn.Layer):
         return self.name
 
     def unflatten(self, tensor, length):
-        if length == 1:
-            return tensor.reshape(self.shapes[0])
+        length_shape = [] if length == 1 else [length]
+        if len(self.shapes) == 1:
+            return tensor.reshape(length_shape + self.shapes[0])
 
-        tensors_r = []
+        tensors = []
         total = 0
 
         for shape, num_ele in zip(self.shapes, self.num_elements):
             next_total = total + num_ele
-            # It's important that this be view((...)), not view(...). Else when length=(), shape=() it fails.
-            if len(shape) == 0:
-                tensors_r.append(tensor[..., total:next_total].reshape((*(length,), 0)))
-            else:
-                tensors_r.append(
-                    tensor[..., total:next_total].reshape((*(length,), *shape))
-                )
+            tensors.append(tensor[..., total:next_total].reshape(length_shape + shape))
             total = next_total
-        return tuple(tensors_r)
+        return tuple(tensors)
 
     def flatten(self, tensors):
         if isinstance(tensors, tuple) or isinstance(tensors, list):
