@@ -503,7 +503,6 @@ class AdamsBashforthMoulton(FixedSolver):
     def step(self, t0, t1, y0):
         dt = t1 - t0
         f0 = self.move(t0, dt, y0)
-        # self._update_history(t0, self.get_dy(f0))
         if self.prev_f is None:
             self.prev_f = f0
         else:
@@ -512,12 +511,11 @@ class AdamsBashforthMoulton(FixedSolver):
         order = min(len(self.prev_f), self.max_order - 1)
         if order < _MIN_ORDER - 1:
             # Compute using RK4.
-            return self.rk4_alt_step_func(t0, t1, y0, f0=self.prev_f[0]), f0
+            return self.rk4_alt_step_func(t0, t1, y0, f0=f0), f0
         else:
             # Adams-Bashforth predictor.
-            bashforth_coeffs = (
-                self.bashforth[order].unsqueeze(-1).astype(y0.dtype)
-            )  # bashforth is float64 so cast back
+            bashforth_coeffs = self.bashforth[order]
+            bashforth_coeffs.astype(y0.dtype)  # bashforth is float64 so cast back
             dy = paddle.sum(
                 paddle.dot(bashforth_coeffs, self.prev_f), axis=0, keepdim=True
             )
@@ -545,6 +543,5 @@ class AdamsBashforthMoulton(FixedSolver):
                         "Functional iteration did not converge. Solution may be incorrect."
                     )
                     self.prev_f.pop()
-                # self._update_history(t0, self.get_dy(f))
                 self.prev_f = paddle.concat([f, self.prev_f])[: self.max_order - 1]
-            return self.fuse(dy, dt, y0), self.get_dy(f0)
+            return self.fuse(dy, dt, y0), f0

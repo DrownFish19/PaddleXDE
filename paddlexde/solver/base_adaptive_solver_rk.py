@@ -88,7 +88,7 @@ class AdaptiveRKSolver(AdaptiveSolver):
         else:
             first_step = self.first_step
         self.rk_state = _RungeKuttaState(
-            self.y0, self.get_dy(f0), t_span[0], t_span[0], first_step, [self.y0] * 5
+            self.y0, f0, t_span[0], t_span[0], first_step, [self.y0] * 5
         )
 
         # Handle step_t and jump_t arguments.
@@ -167,7 +167,7 @@ class AdaptiveRKSolver(AdaptiveSolver):
                 y0.shape
             )
             f = self.move(ti, dt, yi)
-            k = PaddleAssign.apply(target=k, value=self.get_dy(f), index=(..., i + 1))
+            k = PaddleAssign.apply(target=k, value=f, index=(..., i + 1))
 
         if not (
             tableau.c_sol[-1] == 0 and (tableau.c_sol[:-1] == tableau.beta[-1]).all()

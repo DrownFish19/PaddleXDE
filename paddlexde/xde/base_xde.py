@@ -72,15 +72,6 @@ class BaseXDE(ABC, nn.Layer):
         """
         raise NotImplementedError
 
-    @abstractmethod
-    def get_dy(self, dy):
-        """
-        获取当前的dy
-        :param dy:
-        :return:
-        """
-        raise NotImplementedError
-
     def format(self, sol):
         return self.unflatten(sol, self.length)
 

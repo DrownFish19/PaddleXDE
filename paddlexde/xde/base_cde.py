@@ -30,7 +30,4 @@ class BaseCDE(BaseXDE):
         return [dy]
 
     def fuse(self, dy, dt, y0):
-        return y0 + dy[0] * dt
-
-    def get_dy(self, dy):
-        return dy[0]
+        return y0 + dy * dt

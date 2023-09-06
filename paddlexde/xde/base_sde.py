@@ -56,7 +56,4 @@ class BaseSDE(BaseXDE):
         return paddle.stack([dy, dg])
 
     def fuse(self, dy, dt, y0):
-        return y0 + dy[0] * dt + dy[1]
-
-    def get_dy(self, dy):
-        return dy[0]
+        return y0 + dy * dt + dy  # TODO different dy
