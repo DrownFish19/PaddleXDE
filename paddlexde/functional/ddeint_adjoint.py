@@ -1,2 +1,2 @@
-def odeint_adjoint(**kwargs):
+def ddeint_adjoint(**kwargs):
     raise NotImplementedError
