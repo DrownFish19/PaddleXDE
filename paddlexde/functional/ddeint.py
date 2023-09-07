@@ -11,6 +11,7 @@ def ddeint(
     y0: Union[tuple, paddle.Tensor],
     t_span,
     lags,
+    history,
     solver,
     *,
     rtol=1e-7,
@@ -26,7 +27,7 @@ def ddeint(
     where y is a Tensor or tuple of Tensors of any shape.
     """
 
-    xde = BaseDDE(func, y0=y0, t_span=t_span, lags=lags)
+    xde = BaseDDE(func, y0=y0, t_span=t_span, lags=lags, history=history)
 
     s = solver(xde=xde, y0=xde.y0, rtol=rtol, atol=atol, **options)
     solution = s.integrate(t_span)
