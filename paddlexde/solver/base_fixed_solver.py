@@ -3,6 +3,7 @@ from typing import Union
 
 import paddle
 
+from ..interpolation.functional import cubic_hermite_interp, linear_interp
 from ..xde.base_xde import BaseXDE
 
 _one_third = 1 / 3
@@ -100,10 +101,10 @@ class FixedSolver(metaclass=abc.ABCMeta):
 
             while j < len(t_span) and t1 >= t_span[j]:
                 if self.interp == "linear":
-                    solution[j] = self._linear_interp(t0, t1, y0, y1, t_span[j])
+                    solution[j] = linear_interp(t0, t1, y0, y1, t_span[j])
                 elif self.interp == "cubic":
                     _, dy1 = self.step(t1, t1, y1)
-                    solution[j] = self._cubic_hermite_interp(
+                    solution[j] = cubic_hermite_interp(
                         t0, y0, dy0, t1, y1, dy1, t_span[j]
                     )
                 else:
@@ -112,25 +113,6 @@ class FixedSolver(metaclass=abc.ABCMeta):
             y0 = y1
 
         return solution
-
-    @staticmethod
-    def _cubic_hermite_interp(t0, y0, f0, t1, y1, f1, t):
-        h = (t - t0) / (t1 - t0)
-        h00 = (1 + 2 * h) * (1 - h) * (1 - h)
-        h10 = h * (1 - h) * (1 - h)
-        h01 = h * h * (3 - 2 * h)
-        h11 = h * h * (h - 1)
-        dt = t1 - t0
-        return h00 * y0 + h10 * dt * f0 + h01 * y1 + h11 * dt * f1
-
-    @staticmethod
-    def _linear_interp(t0, t1, y0, y1, t):
-        if t == t0:
-            return y0
-        if t == t1:
-            return y1
-        slope = (t - t0) / (t1 - t0)
-        return y0 + slope * (y1 - y0)
 
     def rk4_step_func(self, t0, t1, y0, f0=None):
         dt = t1 - t0
