@@ -22,6 +22,10 @@ class BaseDDE(BaseXDE):
         lags: Union[list, paddle.Tensor],
         history: paddle.Tensor,
     ):
+        # TODO 此处传入的数据值需要进行改变
+        # 如果lags不存在梯度值，则不需要进行初始化和更新，才去固定lags的形式
+        # 如果lags存在梯度，证明lags可以进行更新
+        # 如果lags为None，则选择动态初始化lags
         super(BaseDDE, self).__init__(name="ODE", var_nums=1, y0=y0, t_span=t_span)
 
         self.func = func
@@ -34,7 +38,7 @@ class BaseDDE(BaseXDE):
     def move(self, t0, dt, y0):
         # self.init_lags()
         # input_history = paddle.index_select(self.history, self.lags)
-        dy = self.call_func(t0, y0)
+        dy = self.call_func(t0, y0, self.lags, self.history)
         return dy
 
     def fuse(self, dy, dt, y0):
@@ -47,6 +51,8 @@ class BaseDDE(BaseXDE):
 
     def call_func(self, t, y0, lags, y_lags):
         y0 = self.unflatten(y0, length=1)
+        HistoryIndex.apply(xde=self, t=t, y0=y0, lags=lags, history=y_lags)
+
         dy = self.func(t, y0, lags, y_lags)
         dy = self.flatten(dy)
         return dy
@@ -57,9 +63,7 @@ class BaseDDE(BaseXDE):
 
 
 class HistoryIndex(autograd.PyLayer):
-    def forward(
-        ctx, xde: BaseXDE, t, y0, lags, history, h_span, interp_method="linear"
-    ):
+    def forward(ctx, xde: BaseXDE, t, y0, lags, history, interp_method="linear"):
         """
         计算给定输入序列的未来值，并返回计算结果。
         传入lags, history,
@@ -70,7 +74,6 @@ class HistoryIndex(autograd.PyLayer):
             xde (): 未来值的输入序列, BaseXDE类型。
             lags (paddle.Tensor): 用多少个过去的值来计算未来的这个值（未来值的滞后量）。
             history (paddle.Tensor): 用于计算未来值的过去输入序列。
-            h_span (int): 未来多少步的预测。
             interp_method (str, optional): 插值方法，取值为 "linear"（线性插值）,"cubic"（三次样条插值）或 "bez"（贝塞尔插值）。默认为 "linear"。
 
         Returns:
@@ -80,11 +83,11 @@ class HistoryIndex(autograd.PyLayer):
             NotImplementedError: 如果interp_method不是上述三种情况之一, 将抛出NotImplementedError异常。
         """
         if interp_method == "linear":
-            interp = LinearInterpolation(history, h_span)
+            interp = LinearInterpolation(history, lags)
         elif interp_method == "cubic":
-            interp = CubicHermiteSpline(history, h_span)
+            interp = CubicHermiteSpline(history, lags)
         elif interp_method == "bez":
-            interp = BezierSpline(history, h_span)
+            interp = BezierSpline(history, lags)
         else:
             raise NotImplementedError
 

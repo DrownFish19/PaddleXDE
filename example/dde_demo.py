@@ -32,8 +32,11 @@ class DDEFunc(nn.Layer):
         return re
 
 
+model = DDEFunc()
+optimizer = paddle.optimizer.Adam(0.01, parameters=model.parameters())
+
 sol = ddeint(
-    func=DDEFunc(),
+    func=model,
     y0=y_input,
     t_span=t_intput,
     lags=y_lags,
@@ -41,8 +44,10 @@ sol = ddeint(
     solver=Euler,
 )
 
+print(sol.shape)
 loss = nn.functional.l1_loss(sol, y_tgts)
 
 loss.backward()
 
-loss.step()
+optimizer.step()
+optimizer.clear_grad()
