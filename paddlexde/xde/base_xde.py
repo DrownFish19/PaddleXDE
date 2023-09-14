@@ -6,9 +6,8 @@ import paddle.nn as nn
 
 
 class BaseXDE(ABC, nn.Layer):
-    """Base class for all ODEs.
-
-    Inheriting from this class ensures `noise_type` and `sde_type` are valid attributes, which the solver depends on.
+    """
+    Base class for all ODEs.
     """
 
     def __init__(
@@ -22,19 +21,24 @@ class BaseXDE(ABC, nn.Layer):
         self.name = name
         self.var_nums = var_nums  # 返回值数量
 
-        self.init_y0(y0)  # shapes, numels, y0
         self.t_span = t_span
-        self.length = len(t_span)
+        self.batch_size, self.pred_len = t_span.shape
 
-    def init_y0(self, tensors):
-        if isinstance(tensors, tuple) or isinstance(tensors, list):
-            self.shapes = [_tensor.shape for _tensor in tensors]
-            self.num_elements = [paddle.numel(_tensor) for _tensor in tensors]
-            self.y0 = paddle.concat([_tensor.reshape([-1]) for _tensor in tensors])
-        elif isinstance(tensors, paddle.Tensor):
-            self.shapes = [tensors.shape]
-            self.num_elements = [paddle.numel(tensors)]
-            self.y0 = tensors.reshape([-1])
+        self.init_y0(y0)  # shapes, numels, y0
+
+    def init_y0(self, input):
+        if isinstance(input, tuple) or isinstance(input, list):
+            self.shapes = [_tensor.shape for _tensor in input]
+            self.num_elements = [
+                paddle.numel(_tensor) / self.batch_size for _tensor in input
+            ]
+            self.y0 = paddle.concat(
+                [_tensor.reshape([self.batch_size, -1]) for _tensor in input], axis=-1
+            )  # [batch_size, -1]
+        elif isinstance(input, paddle.Tensor):
+            self.shapes = [input.shape]
+            self.num_elements = [paddle.numel(input) / self.batch_size]
+            self.y0 = input.reshape([self.batch_size, -1])
         else:
             raise NotImplementedError
 
@@ -71,35 +75,46 @@ class BaseXDE(ABC, nn.Layer):
         raise NotImplementedError
 
     def format(self, sol):
-        return self.unflatten(sol, self.length)
+        sol = self.unflatten(sol, self.pred_len)
+        sol = paddle.transpose(sol, perm=[1, 0, 2, 3]).squeeze(-2)
+        return sol
 
     def method(self):
         print(f"current method is {self.name}.")
         return self.name
 
-    def unflatten(self, tensor, length):
+    def unflatten(self, input, length):
+        batch_size = input.shape[0]  # 默认第一维是batch_size
+
         length_shape = [] if length == 1 else [length]
         if len(self.shapes) == 1:
-            return tensor.reshape(length_shape + self.shapes[0])
+            return input.reshape(length_shape + self.shapes[0])
 
-        tensors = []
+        output = []
         total = 0
 
+        # TODO:此处需要验证
         for shape, num_ele in zip(self.shapes, self.num_elements):
             next_total = total + num_ele
-            tensors.append(tensor[..., total:next_total].reshape(length_shape + shape))
+            output.append(
+                input[..., total:next_total].reshape(
+                    [batch_size] + length_shape + shape
+                )
+            )
             total = next_total
-        return tuple(tensors)
+        return tuple(output)
 
-    def flatten(self, tensors):
-        if isinstance(tensors, tuple) or isinstance(tensors, list):
-            tensors_r = paddle.concat([_tensor.reshape([-1]) for _tensor in tensors])
-        elif isinstance(tensors, paddle.Tensor):
-            tensors_r = tensors.reshape([-1])
+    def flatten(self, input):
+        if isinstance(input, tuple) or isinstance(input, list):
+            output = paddle.concat(
+                [_tensor.reshape([self.batch_size, -1]) for _tensor in input]
+            )
+        elif isinstance(input, paddle.Tensor):
+            output = input.reshape([self.batch_size, -1])
         else:
             raise NotImplementedError
 
-        return tensors_r
+        return output
 
     @abstractmethod
     def call_func(self, **kwargs):

@@ -14,7 +14,7 @@ class InterpolationBase(nn.Layer, metaclass=abc.ABCMeta):
                 series.shape[-2],
                 series.shape[-2] + 1,
                 dtype=series.dtype,
-            )
+            ).expand(series.shape[:-1])
         series = paddle.cast(series, dtype="float32")
         t = paddle.cast(t, dtype="float32")
 
@@ -26,6 +26,7 @@ class InterpolationBase(nn.Layer, metaclass=abc.ABCMeta):
         self._series_arr = series_arr
         self._series = series
         self._derivs = derivs
+        self._batch_size, self._seq_len, self._dims = series.shape
 
     @property
     def grid_points(self):
@@ -51,14 +52,30 @@ class InterpolationBase(nn.Layer, metaclass=abc.ABCMeta):
         """
         t = paddle.to_tensor(t, dtype=self._series.dtype)
         maxlen = self._series.shape[-2] - 1
-        # clamp because t may go outside of [t[0], t[-1]]; this is fine
-        index = (paddle.bucketize(t.detach(), self._t.detach()) - 1).clip(0, maxlen)
-        # will never access the last element of self._t; this is correct behaviour
+        t_shape, _t_shape, _scale_t_shape = t.shape, self._t.shape, self._scale_t.shape
 
-        norm_t = (t - self._t[index : index + 1]) / self._scale_t[index : index + 1]
+        index = []
+        norm_t = []
+        ts_tensor = []
+        for t_i, _t_i, _scale_t_i in zip(
+            paddle.reshape(t, shape=[-1, t_shape[-1]]),
+            paddle.reshape(self._t, shape=[-1, _t_shape[-1]]),
+            paddle.reshape(self._scale_t, shape=[-1, _scale_t_shape[-1]]),
+        ):
+            # clamp because t may go outside of [t[0], t[-1]]; this is fine
+            # will never access the last element of self._t; this is correct behaviour
+            index_i = (paddle.bucketize(t_i, _t_i) - 1).clip(0, maxlen)
+            norm_t_i = (t_i - _t_i[index_i]) / _scale_t_i[index_i]
+            ts_i = self.ts(norm_t_i, der=der)
+
+            index.append(index_i)
+            norm_t.append(norm_t_i)
+            ts_tensor.append(ts_i)
+
+        index = paddle.stack(index, axis=0).reshape(t_shape)
+        ts_tensor = paddle.stack(ts_tensor, axis=0).reshape([*t_shape, *ts_i.shape[1:]])
 
         ps_tensor = self.ps(index)
-        ts_tensor = self.ts(norm_t, der=der)
 
         return ts_tensor, ps_tensor, index
 
@@ -95,7 +112,7 @@ class InterpolationBase(nn.Layer, metaclass=abc.ABCMeta):
         ts_tensor, ps_tensor, index = self.interpolate(t, der=True)
         result = ts_tensor @ self._h.to_dense() @ ps_tensor
         # result *= self._scale_t[index : index + 1]
-        return result
+        return result.squeeze(-2)
 
     @abc.abstractmethod
     def _make_series(self, series, t):

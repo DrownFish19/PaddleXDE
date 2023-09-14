@@ -7,7 +7,9 @@ from .base_xde import BaseXDE
 
 
 class BaseODE(BaseXDE):
-    """Base class for all ODEs."""
+    """
+    Base class for all ODEs.
+    """
 
     def __init__(
         self,

@@ -87,32 +87,49 @@ class FixedSolver(metaclass=abc.ABCMeta):
         """
         raise NotImplementedError
 
-    def integrate(self, t_span):
-        time_grid = self.grid_constructor(self.y0, t_span)
-        assert time_grid[0] == t_span[0] and time_grid[-1] == t_span[-1]
+    def integrate(self, t_span: paddle.Tensor):
+        """_summary_
 
-        solution = paddle.empty([len(t_span), *self.y0.shape], dtype=self.y0.dtype)
-        solution[0] = self.y0
+        Args:
+            t_span (paddle.Tensor): [batch_size, pred_len]
 
-        j = 1
+        Raises:
+            ValueError: _description_
+
+        Returns:
+            _type_: _description_
+        """
+
+        batch_size, pred_len = t_span.shape
+        # time_grid = self.grid_constructor(self.y0, t_span)
+        time_grid = t_span
+        assert paddle.equal_all(time_grid[..., 0], t_span[..., 0])
+        assert paddle.equal_all(time_grid[..., -1], t_span[..., -1])
+
+        # sol solution [pred_len, batch_size, dims]
+        sol = paddle.empty(shape=[pred_len] + self.y0.shape, dtype=self.y0.dtype)
+        sol[0] = self.y0
+
         y0 = self.y0
-        for t0, t1 in zip(time_grid[:-1], time_grid[1:]):
+
+        for i in range(1, pred_len):
+            t0, t1 = time_grid[..., i - 1 : i], time_grid[..., i : i + 1]
             y1, dy0 = self.step(t0, t1, y0)
 
-            while j < len(t_span) and t1 >= t_span[j]:
-                if self.interp == "linear":
-                    solution[j] = linear_interp(t0, t1, y0, y1, t_span[j])
-                elif self.interp == "cubic":
-                    _, dy1 = self.step(t1, t1, y1)
-                    solution[j] = cubic_hermite_interp(
-                        t0, y0, dy0, t1, y1, dy1, t_span[j]
-                    )
-                else:
-                    raise ValueError(f"Unknown interpolation method {self.interp}")
-                j += 1
+            # while j < pred_len and paddle.greater_equal(t1, t_span[..., j]):
+            if self.interp == "linear":
+                sol[i] = linear_interp(t0, t1, y0, y1, t_span[..., i : i + 1])
+            elif self.interp == "cubic":
+                y2, dy1 = self.step(t1, t1, y1)
+                sol[i] = cubic_hermite_interp(
+                    t0, y0, dy0, t1, y1, dy1, t_span[..., i : i + 1]
+                )
+            else:
+                raise ValueError(f"Unknown interpolation method {self.interp}")
+
             y0 = y1
 
-        return solution
+        return sol
 
     def rk4_step_func(self, t0, t1, y0, f0=None):
         dt = t1 - t0

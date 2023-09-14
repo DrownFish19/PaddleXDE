@@ -12,7 +12,9 @@ from .base_xde import BaseXDE
 
 
 class BaseDDE(BaseXDE):
-    """Base class for all ODEs."""
+    """
+    Base class for all DDEs.
+    """
 
     def __init__(
         self,
@@ -42,12 +44,7 @@ class BaseDDE(BaseXDE):
         # input_history = paddle.index_select(self.history, self.lags)
 
         y_lags = HistoryIndex.apply(
-            xde=self,
-            t0=t0,
-            y0=y0,
-            lags=self.lags,
-            his=self.his,
-            his_span=self.his_span,
+            xde=self, t0=t0, y0=y0, lags=self.lags, his=self.his, his_span=self.his_span
         )
         # y_lags [B, T, D]  T是选择后的序列长度
 
@@ -55,7 +52,6 @@ class BaseDDE(BaseXDE):
         return dy
 
     def fuse(self, dy, dt, y0):
-        # 测试是够还存在振动
         y = dy * dt + y0
         _lambda = 0.001
         return (dy - _lambda * y) * dt + y0
@@ -74,7 +70,7 @@ class BaseDDE(BaseXDE):
 
 
 class HistoryIndex(autograd.PyLayer):
-    def forward(ctx, xde: BaseXDE, t, y0, lags, his, his_span, interp_method="linear"):
+    def forward(ctx, xde: BaseXDE, t0, y0, lags, his, his_span, interp_method="linear"):
         """
         计算给定输入序列的未来值，并返回计算结果。
         传入lags, history,
@@ -107,8 +103,10 @@ class HistoryIndex(autograd.PyLayer):
         axis_index = lags[:, :, None]
         axis_d = paddle.arange(dims)[None, None, :]
         y_lags = his[axis_b, axis_index, axis_d]
+        assert isinstance(y_lags, paddle.Tensor)
+        y_lags.stop_gradient = False
 
-        ctx.t = t
+        ctx.t0 = t0
         ctx.y0 = y0
         ctx.lags = lags
         ctx.derivative_lags = interp.derivative(lags)
@@ -121,14 +119,14 @@ class HistoryIndex(autograd.PyLayer):
         # 计算history相应的梯度，并提取forward中保存的梯度，用于计算lag的梯度
         # 在计算的过程中，无需更新history，仅更新lags即可
 
-        t = ctx.t
+        t0 = ctx.t0
         y0 = ctx.y0
         lags = ctx.lags
         derivative_lags = ctx.derivative_lags
         xde = ctx.xde
         y_lags = ctx.y_lags
 
-        eval = xde.call_func(t, y0, lags, y_lags)
+        eval = xde.call_func(t0, y0, lags, y_lags)
 
         grad_y_lags = paddle.grad(
             outputs=[eval],
@@ -136,5 +134,5 @@ class HistoryIndex(autograd.PyLayer):
             grad_outputs=-grad_y,
             allow_unused=True,
             retain_graph=True,
-        )
+        )[0]
         return grad_y_lags * derivative_lags

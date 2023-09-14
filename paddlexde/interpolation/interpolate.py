@@ -40,9 +40,9 @@ class LinearInterpolation(InterpolationBase):
         self._h = h
 
     def _make_series(self, series, t):
-        scale = t[1:] - t[:-1]
-        scale1 = paddle.concat([scale, scale[-1:]])
-        scale2 = paddle.concat([scale[:1], scale1[:-1]])
+        scale = t[..., 1:] - t[..., :-1]
+        scale1 = paddle.concat([scale, scale[..., -1:]], axis=-1)
+        scale2 = paddle.concat([scale[..., :1], scale1[..., :-1]], axis=-1)
 
         series1 = series
         series2 = paddle.concat([series1[..., 1:, :], series[..., -1:, :]], axis=-2)
@@ -62,14 +62,18 @@ class LinearInterpolation(InterpolationBase):
         else:
             t_list = [paddle.ones_like(t), paddle.zeros_like(t)]
 
-        t_tensor = paddle.concat(t_list).unsqueeze(0)
-        return t_tensor  # [1, 4]
+        t_tensor = paddle.stack(t_list, axis=-1).unsqueeze(-2)
+        return t_tensor  # [1, 2]
 
     def ps(self, index):
-        p = paddle.concat(
+        axis_b = paddle.arange(self._batch_size)[:, None, None]
+        axis_index = index[:, :, None]
+        axis_d = paddle.arange(self._dims)[None, None, :]
+
+        p = paddle.stack(
             [
-                self._series_arr[..., index : index + 1, 0, :],
-                self._series_arr[..., index : index + 1, 1, :],
+                (self._series_arr[..., 0, :])[axis_b, axis_index, axis_d],
+                (self._series_arr[..., 1, :])[axis_b, axis_index, axis_d],
             ],
             axis=-2,
         )
