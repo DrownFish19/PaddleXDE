@@ -11,7 +11,10 @@ t0 = paddle.linspace(0.0, 100.0, T)  # [128]
 y0 = series[:, 100:101, :]  # [10, 1, 128]
 t_span = t0[100:].expand([B, 28])  # [10, 28]
 
-lags = paddle.randint(low=0, high=100, shape=[B, 20])  # [10, 20]
+lags = paddle.randint(low=0, high=100, shape=[B, 20]).astype("float32")  # [10, 20]
+lags.stop_gradient = False
+print(lags)
+
 his = series[:, :100, :]  # [10, 100, 128]
 his_span = t0[:100].expand([B, 100])  # [10, 100]
 
@@ -45,7 +48,7 @@ class DDEFunc(nn.Layer):
 
 
 model = DDEFunc()
-optimizer = paddle.optimizer.Adam(0.01, parameters=model.parameters())
+optimizer = paddle.optimizer.Adam(2.0, parameters=model.parameters() + [lags])
 
 sol = ddeint(
     func=model,
@@ -57,10 +60,11 @@ sol = ddeint(
     solver=Euler,
 )
 
-print(sol.shape)
 loss = nn.functional.l1_loss(sol, y_tgts)
 
 loss.backward()
 
 optimizer.step()
 optimizer.clear_grad()
+
+print(lags)

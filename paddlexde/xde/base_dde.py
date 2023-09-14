@@ -100,7 +100,7 @@ class HistoryIndex(autograd.PyLayer):
 
         batch_size, len_t, dims = his.shape  # [B, T, D]
         axis_b = paddle.arange(batch_size)[:, None, None]
-        axis_index = lags[:, :, None]
+        axis_index = lags[:, :, None].astype("int64")
         axis_d = paddle.arange(dims)[None, None, :]
         y_lags = his[axis_b, axis_index, axis_d]
         assert isinstance(y_lags, paddle.Tensor)
@@ -125,14 +125,17 @@ class HistoryIndex(autograd.PyLayer):
         derivative_lags = ctx.derivative_lags
         xde = ctx.xde
         y_lags = ctx.y_lags
+        y_lags.stop_gradient = False
 
-        eval = xde.call_func(t0, y0, lags, y_lags)
+        with paddle.set_grad_enabled(True):
+            eval = xde.call_func(t0, y0, lags, y_lags)
 
-        grad_y_lags = paddle.grad(
-            outputs=[eval],
-            inputs=[y_lags],
-            grad_outputs=-grad_y,
-            allow_unused=True,
-            retain_graph=True,
-        )[0]
-        return grad_y_lags * derivative_lags
+            grad_y_lags = paddle.grad(
+                outputs=[eval],
+                inputs=[y_lags],
+                grad_outputs=-grad_y,
+                allow_unused=True,
+                retain_graph=True,
+            )[0]
+        return None, None, grad_y_lags * derivative_lags * 100000, None, None
+        # return None, grad_y_lags * derivative_lags, None, None, None
