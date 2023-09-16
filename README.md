@@ -25,6 +25,12 @@ Examples are placed in the `example` directory.
 paddle
 ```
 
+## TODO List
+- [ ] add dde example
+- [ ] add dde tests
+- [ ] test for dp etc.
+- [ ] 数据reshape 并行问题 数据reshape时，不应该reshape batchsize维度，
+
 ## Acknowledgments
 
 * [torchdiffeq](https://github.com/rtqichen/torchdiffeq.git)

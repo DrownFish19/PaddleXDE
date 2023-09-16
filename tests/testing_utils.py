@@ -5,9 +5,9 @@ import paddle
 import scipy.linalg
 
 
-class ConstantODE(paddle.nn.Layer):
+class ConstantXDE(paddle.nn.Layer):
     def __init__(self):
-        super(ConstantODE, self).__init__()
+        super(ConstantXDE, self).__init__()
         self.a = paddle.create_parameter(
             shape=[1],
             dtype=paddle.float32,
@@ -19,15 +19,15 @@ class ConstantODE(paddle.nn.Layer):
             default_initializer=paddle.nn.initializer.Assign(paddle.to_tensor(3.0)),
         )
 
-    def forward(self, t, y):
+    def forward(self, t, y, **kwargs):
         return self.a + (y - (self.a * t + self.b)) ** 5
 
     def y_exact(self, t):
         return (self.a * t + self.b).unsqueeze(-1)
 
 
-class SineODE(paddle.nn.Layer):
-    def forward(self, t, y):
+class SineXDE(paddle.nn.Layer):
+    def forward(self, t, y, **kwargs):
         return 2 * y / t + t**4 * paddle.sin(2 * t) - t**2 + 4 * t**3
 
     def y_exact(self, t):
@@ -41,9 +41,9 @@ class SineODE(paddle.nn.Layer):
         ).unsqueeze(-1)
 
 
-class LinearODE(paddle.nn.Layer):
+class LinearXDE(paddle.nn.Layer):
     def __init__(self, dim=10):
-        super(LinearODE, self).__init__()
+        super(LinearXDE, self).__init__()
         self.dim = dim
         U = paddle.randn([dim, dim]) * 0.1
         A = 2 * U - (U + U.transpose([1, 0]))
@@ -55,7 +55,7 @@ class LinearODE(paddle.nn.Layer):
         self.initial_val = np.ones((dim, 1))
         self.nfe = 0
 
-    def forward(self, t, y):
+    def forward(self, t, y, **kwargs):
         self.nfe += 1
         return paddle.mm(self.A, y.reshape([self.dim, 1])).reshape([-1])
 
@@ -70,7 +70,7 @@ class LinearODE(paddle.nn.Layer):
         )
 
 
-PROBLEMS = {"constant": ConstantODE, "linear": LinearODE, "sine": SineODE}
+PROBLEMS = {"constant": ConstantXDE, "linear": LinearXDE, "sine": SineXDE}
 DTYPES = (paddle.float32, paddle.float64, paddle.complex64)
 DEVICES = ["cpu"]
 FIXED_METHODS = ("euler", "midpoint", "rk4", "explicit_adams", "implicit_adams")
@@ -99,7 +99,7 @@ def construct_problem(npts=10, ode="constant", reverse=False, dtype=paddle.float
 
 
 if __name__ == "__main__":
-    f = SineODE()
+    f = SineXDE()
     t_points = paddle.linspace(1, 8, 100)
     sol = f.y_exact(t_points)
 

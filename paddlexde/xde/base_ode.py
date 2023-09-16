@@ -7,7 +7,9 @@ from .base_xde import BaseXDE
 
 
 class BaseODE(BaseXDE):
-    """Base class for all ODEs."""
+    """
+    Base class for all ODEs.
+    """
 
     def __init__(
         self,
@@ -15,7 +17,24 @@ class BaseODE(BaseXDE):
         y0: Union[tuple, paddle.Tensor],
         t_span: Union[list, paddle.Tensor],
     ):
+        """_summary_
+
+        Args:
+            func (Union[nn.Layer, callable]): _description_
+            y0 (Union[tuple, paddle.Tensor]): paddle.Tensor shape is (B, T, D), T=1, tuple shape is TODO
+            t_span (Union[list, paddle.Tensor]): shape is (B, T), T=pred_len
+        """
         super(BaseODE, self).__init__(name="ODE", var_nums=1, y0=y0, t_span=t_span)
+        """
+        super() will create
+        self.t_span,
+        self.batch_size,
+        self.pred_len,
+        self.shapes, TODO
+        self.numels, TODO
+        self.y0 (after reshape) TODO
+        """
+
         self.func = func
 
     def handle(self, h, ts):

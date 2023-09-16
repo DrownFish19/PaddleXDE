@@ -9,6 +9,7 @@ import paddle.optimizer as optim
 
 from paddlexde.solver.fixed_solver import RK4
 
+# TODO modify the input args
 parser = argparse.ArgumentParser("ODE demo")
 parser.add_argument("--method", type=str, choices=["dopri5", "adams"], default="dopri5")
 parser.add_argument("--data_size", type=int, default=1000)
@@ -18,7 +19,7 @@ parser.add_argument("--niters", type=int, default=2000)
 parser.add_argument("--test_freq", type=int, default=20)
 parser.add_argument("--viz", type=bool, default=True)
 parser.add_argument("--gpu", type=int, default=0)
-parser.add_argument("--adjoint", type=bool, default=True)
+parser.add_argument("--adjoint", type=bool, default=False)
 args = parser.parse_args()
 
 if args.adjoint:
@@ -27,17 +28,21 @@ else:
     from paddlexde.functional import odeint
 
 paddle.seed(3407)
-true_y0 = paddle.to_tensor([2.0, 0.0])
-t = paddle.linspace(0.0, 25.0, args.data_size)
-true_A = paddle.to_tensor([[-0.1, 2.0], [-2.0, -0.1]])
+true_y0 = paddle.to_tensor([2.0, 0.0]).unsqueeze(0)  # [1, 2]
+t = paddle.linspace(0.0, 25.0, args.data_size).unsqueeze(0)  # [1, T], T is data_len
+true_A = paddle.to_tensor([[-0.1, 2.0], [-2.0, -0.1]])  # [2, 2]
 
 
 class Lambda(nn.Layer):
     def forward(self, t, y):
+        # y**3 => [B, D]
+        # paddle.mm => [B, D] x [D, D] => [B, D]
         return paddle.mm(y**3, true_A)
 
 
 with paddle.no_grad():
+    # construst the train data
+    # [T, D], T is data_len
     true_y = odeint(Lambda(), true_y0, t, solver=RK4)
 
 
@@ -49,12 +54,16 @@ def get_batch():
             replace=False,
         )
     )
-    batch_y0 = paddle.index_select(true_y, s, axis=0)  # (M, D)
-    batch_t = t[: args.batch_time]  # (T)
+    batch_y0 = paddle.index_select(true_y[0], s, axis=0)  # (batch_szie, D)
+    # [[1, batchsize], [1, batchsize], ...] => [batch_size, T], T is pred_len
+    batch_t = paddle.concat(
+        [paddle.index_select(t, s + i, axis=1) for i in range(args.batch_time)], axis=0
+    ).transpose([1, 0])
+    # [[batchsize, D], [batchsize, D],...] => [batch_size, T, D], T is pred_len
     batch_y = paddle.stack(
-        [paddle.index_select(true_y, s + i, axis=0) for i in range(args.batch_time)],
-        axis=0,
-    )  # (T, M, D)
+        [paddle.index_select(true_y[0], s + i, axis=0) for i in range(args.batch_time)],
+        axis=1,
+    )
     return batch_y0, batch_t, batch_y
 
 
@@ -81,18 +90,18 @@ def visualize(true_y, pred_y, odefunc, itr):
         ax_traj.set_xlabel("t")
         ax_traj.set_ylabel("x,y")
         ax_traj.plot(
-            t.cpu().numpy(),
-            true_y.cpu().numpy()[:, 0],
-            t.cpu().numpy(),
-            true_y.cpu().numpy()[:, 1],
+            t.cpu().numpy()[0],
+            true_y.cpu().numpy()[0, :, 0],
+            t.cpu().numpy()[0],
+            true_y.cpu().numpy()[0, :, 1],
             "g-",
         )
         ax_traj.plot(
-            t.cpu().numpy(),
-            pred_y.cpu().numpy()[:, 0],
+            t.cpu().numpy()[0],
+            pred_y.cpu().numpy()[0, :, 0],
             "--",
-            t.cpu().numpy(),
-            pred_y.cpu().numpy()[:, 1],
+            t.cpu().numpy()[0],
+            pred_y.cpu().numpy()[0, :, 1],
             "b--",
         )
         ax_traj.set_xlim(t.cpu().numpy().min(), t.cpu().numpy().max())
@@ -103,8 +112,12 @@ def visualize(true_y, pred_y, odefunc, itr):
         ax_phase.set_title("Phase Portrait")
         ax_phase.set_xlabel("x")
         ax_phase.set_ylabel("y")
-        ax_phase.plot(true_y.cpu().numpy()[:, 0], true_y.cpu().numpy()[:, 1], "g-")
-        ax_phase.plot(pred_y.cpu().numpy()[:, 0], pred_y.cpu().numpy()[:, 1], "b--")
+        ax_phase.plot(
+            true_y.cpu().numpy()[0, :, 0], true_y.cpu().numpy()[0, :, 1], "g-"
+        )
+        ax_phase.plot(
+            pred_y.cpu().numpy()[0, :, 0], pred_y.cpu().numpy()[0, :, 1], "b--"
+        )
         ax_phase.set_xlim(-2, 2)
         ax_phase.set_ylim(-2, 2)
 
@@ -193,6 +206,9 @@ if __name__ == "__main__":
     for itr in range(1, args.niters + 1):
         optimizer.clear_grad()
         batch_y0, batch_t, batch_y = get_batch()
+        # batch_y0 : [B, D]
+        # batch_t  : [B, T]
+        # batch_y  : [B, T, D]
         pred_y = odeint(func, batch_y0, batch_t, solver=RK4)
         loss = paddle.mean(paddle.abs(pred_y - batch_y))
         loss.backward()

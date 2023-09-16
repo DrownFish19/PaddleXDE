@@ -4,11 +4,64 @@
     // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+
         {
             "name": "current",
             "type": "python",
             "request": "launch",
             "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [],
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+                "PYTHONPATH": "${workspaceFolder}",
+            }
+        },
+        {
+            "name": "ode_demo",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/example/ode_demo.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [],
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+                "PYTHONPATH": "${workspaceFolder}",
+            }
+        },
+        {
+            "name": "dde_demo",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/example/dde_demo.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [],
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+                "PYTHONPATH": "${workspaceFolder}",
+            }
+        },
+        {
+            "name": "cde_demo",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/example/cde_demo.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [],
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+                "PYTHONPATH": "${workspaceFolder}",
+            }
+        },
+        {
+            "name": "sde_demo",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/example/sde_demo.py",
             "console": "integratedTerminal",
             "justMyCode": false,
             "args": [],

@@ -11,11 +11,12 @@ def ddeint(
     y0: Union[tuple, paddle.Tensor],
     t_span,
     lags,
+    his,
+    his_span,
     solver,
-    *,
     rtol=1e-7,
     atol=1e-9,
-    options: object = {"norm": _rms_norm}
+    options: object = {"norm": _rms_norm},
 ):
     """Integrate a system of delay differential equations.
 
@@ -26,7 +27,10 @@ def ddeint(
     where y is a Tensor or tuple of Tensors of any shape.
     """
 
-    xde = BaseDDE(func, y0=y0, t_span=t_span, lags=lags)
+    xde = BaseDDE(func, y0=y0, t_span=t_span, lags=lags, his=his, his_span=his_span)
+    # TODO 此处仅需要传入his，lags如果设定为固定值则需要传入，如果设定为动态计算，每次计算batch时，会初始优化出lags
+    # 实现自适应的延迟计算
+    # 如果最后存在需要，可以返回每个batch的lags数据，进行可视化查看
 
     s = solver(xde=xde, y0=xde.y0, rtol=rtol, atol=atol, **options)
     solution = s.integrate(t_span)
