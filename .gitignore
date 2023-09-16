@@ -35,6 +35,8 @@ MANIFEST
 example/*/*.png
 example/*.gif
 tools/
+png/*
+jpg/*
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
