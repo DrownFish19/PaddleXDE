@@ -1,33 +1,38 @@
 import paddle
 import paddle.nn as nn
 
-from paddlexde.functional import ddeint
+from example.demo_utils import DemoUtils, SimpleDemoData
+from paddlexde.functional import ddeint, ddeint_adjoint
 from paddlexde.solver.fixed_solver import Euler
 
-B, T, D = 10, 128, 128
-series = paddle.randn([B, T, D])  # [10, 128, 128]
-t0 = paddle.linspace(0.0, 100.0, T)  # [128]
+demo_utils = DemoUtils()
+if demo_utils.args.adjoint:
+    xdeint = ddeint_adjoint
+else:
+    xdeint = ddeint
 
-# [10, 1, 128] => [10, 128] with default len 1, we ignore the length dimension
-y0 = series[:, 100, :]
-t_span = t0[100:].expand([B, 28])  # [10, 28]
 
-lags = paddle.randint(low=0, high=100, shape=[B, 20]).astype("float32")  # [10, 20]
-lags.stop_gradient = False
-print(lags)
+class DDEDataset(SimpleDemoData):
+    def __init__(self, his_len):
+        super().__init__(demo_utils.args)
 
-his = series[:, :100, :]  # [10, 100, 128]
-his_span = t0[:100].expand([B, 100])  # [10, 100]
+        self.his_len = his_len
 
-y_tgts = series[:, 100:, :]  # [10, 28, 128]
-t_tgts = t0[100:].expand([B, 28])  # [10, 28]
+    def __getitem__(self, idx):
+        his = self.true_y[idx : idx + self.his_len, :]
+        his_span = self.t_span[idx : idx + self.his_len]
+
+        return super().__getitem__(idx + self.his_len) + (his, his_span)
+
+    def __len__(self):
+        return super().__len__() - self.his_len
 
 
 class DDEFunc(nn.Layer):
     def __init__(self):
         super().__init__()
-        self.linear1 = nn.Linear(D, D * 2)
-        self.linear2 = nn.Linear(D * 2, D)
+        self.linear1 = nn.Linear(2, 2 * 2)
+        self.linear2 = nn.Linear(2 * 2, 2)
 
     def forward(self, t, y0, lags, y_lags):
         """_summary_
@@ -48,24 +53,77 @@ class DDEFunc(nn.Layer):
         return re
 
 
-model = DDEFunc()
-optimizer = paddle.optimizer.Adam(2.0, parameters=model.parameters() + [lags])
+if __name__ == "__main__":
+    his_len = demo_utils.args.his_len
+    dde_dataset = DDEDataset(his_len=his_len)
+    demo_utils.make_dataloader(dde_dataset)
 
-sol = ddeint(
-    func=model,
-    y0=y0,
-    t_span=t_span,
-    lags=lags,
-    his=his,
-    his_span=his_span,
-    solver=Euler,
-)
+    # [B, T], T is pred_len
+    lags = paddle.randint(
+        low=0, high=his_len, shape=[demo_utils.args.batch_size, 20]
+    ).astype("float32")
+    lags.stop_gradient = False
 
-loss = nn.functional.l1_loss(sol, y_tgts)
+    func = DDEFunc()
+    optimizer = paddle.optimizer.RMSProp(
+        parameters=func.parameters() + [lags], learning_rate=1e-3
+    )
 
-loss.backward()
+    stop = False
+    global_step = 0
+    while not stop:
+        for (
+            batch_y0,
+            batch_t_span,
+            batch_y,
+            batch_his,
+            batch_his_span,
+        ) in demo_utils.dataloader:
+            # batch_y0       : [B, D]
+            # batch_t_span   : [B, T], T is pres_len
+            # batch_y        : [B, T, D], T is pred_len
+            # batch_his      : [B, T, D], T is his_len
+            # batch_his_span : [B, T], T is his_len
+            print("run")
+            pred_y = xdeint(
+                func,
+                batch_y0,
+                batch_t_span,
+                lags,
+                batch_his,
+                batch_his_span,
+                solver=Euler,
+            )
+            loss = paddle.mean(paddle.abs(pred_y - batch_y))
+            loss.backward()
+            optimizer.step()
+            optimizer.clear_grad()
 
-optimizer.step()
-optimizer.clear_grad()
+            lags = paddle.assign(lags.detach().clip(0, his_len))
+            lags.stop_gradient = False
 
-print(lags)
+            global_step += 1
+            print(global_step)
+            # retain_graph=True
+            if global_step >= demo_utils.args.max_steps:
+                stop = True
+                break
+
+            if global_step % demo_utils.args.test_steps == 0:
+                with paddle.no_grad():
+                    data = demo_utils.data
+                    y0 = data.true_y[his_len].unsqueeze(0)  # [1, D]
+                    t_span = data.t_span[his_len + 1 :].unsqueeze(0)  # [1, T]
+                    true_y = data.true_y[his_len + 1 :].unsqueeze(0)  # [1, T, D]
+                    his = data.true_y[:his_len].unsqueeze(0)  # [1, T, D]
+                    his_span = data.t_span[:his_len].unsqueeze(0)  # [1, T]
+                    pred_y = xdeint(func, y0, t_span, lags, his, his_span, solver=Euler)
+                    loss = paddle.mean(paddle.abs(pred_y - true_y))
+                    print(
+                        "Iter {:04d} | Total Loss {:.6f}".format(
+                            global_step, loss.item()
+                        )
+                    )
+                    demo_utils.visualize(pred_y, func, global_step)
+
+    demo_utils.stop()
