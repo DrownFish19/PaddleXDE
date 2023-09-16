@@ -27,10 +27,11 @@ class FixedSolver(metaclass=abc.ABCMeta):
         """API for solvers with possibly adaptive time stepping.
 
         :param xde: BaseXDE, including BaseODE, BaseSDE, BaseCDE and so on.
-        :param y0:
-        :param step_size:
+        :param y0: [B, D] Tensor of initial state. NOTE: The input should always be a len of size 1,
+                    thus we ignore len dim.
+        :param step_size: defualt step size will be calculated based on the number of steps needed.
         :param grid_constructor:
-        :param interp:
+        :param interp: ["linear", "cubic"] for linear interpolation and cubic interpolation.
         :param perturb:
         :param kwargs:
         """
@@ -64,11 +65,22 @@ class FixedSolver(metaclass=abc.ABCMeta):
     @staticmethod
     def _grid_constructor_from_step_size(step_size):
         def _grid_constructor(y0, t):
-            start_time = t[0]
-            end_time = t[-1]
+            """_summary_
+
+            Args:
+                y0 (_type_): [B, D]
+                t (_type_): [B, T], T is pred_len
+
+            Returns:
+                _type_: _description_
+            """
+            start_time = t[..., 0]
+            end_time = t[..., -1]
 
             niters = paddle.ceil((end_time - start_time) / step_size + 1).item()
-            t_infer = paddle.arange(0, niters, dtype=t.dtype) * step_size + start_time
+            t_infer = (
+                paddle.arange(0, niters, dtype=t.dtype) * step_size + start_time
+            )  # todo
             t_infer[-1] = t[-1]
 
             return t_infer
@@ -80,9 +92,9 @@ class FixedSolver(metaclass=abc.ABCMeta):
         """Propose a step with step size from time t to time next_t, with
          current state y.
 
-        :param t0:
-        :param t1:
-        :param y0:
+        :param t0: [B, 1]
+        :param t1: [B, 1]
+        :param y0: [B, 1, D]
         :return:
         """
         raise NotImplementedError
@@ -101,8 +113,8 @@ class FixedSolver(metaclass=abc.ABCMeta):
         """
 
         batch_size, pred_len = t_span.shape
-        # time_grid = self.grid_constructor(self.y0, t_span)
-        time_grid = t_span
+        time_grid = self.grid_constructor(self.y0, t_span)
+        # time_grid = t_span
         assert paddle.equal_all(time_grid[..., 0], t_span[..., 0])
         assert paddle.equal_all(time_grid[..., -1], t_span[..., -1])
 

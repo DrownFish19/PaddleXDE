@@ -29,7 +29,7 @@ class BaseDDE(BaseXDE):
         # 如果lags不存在梯度值，则不需要进行初始化和更新，采取固定lags的形式
         # 如果lags存在梯度，证明lags可以进行更新
         # 如果lags为None，则选择动态初始化lags
-        super(BaseDDE, self).__init__(name="ODE", var_nums=1, y0=y0, t_span=t_span)
+        super(BaseDDE, self).__init__(name="DDE", var_nums=1, y0=y0, t_span=t_span)
 
         self.func = func
         self.lags = lags

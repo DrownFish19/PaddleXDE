@@ -75,8 +75,9 @@ class BaseXDE(ABC, nn.Layer):
         raise NotImplementedError
 
     def format(self, sol):
+        # [pred_len, batch_size, D]
         sol = self.unflatten(sol, self.pred_len)
-        sol = paddle.transpose(sol, perm=[1, 0, 2, 3]).squeeze(-2)
+        sol = paddle.transpose(sol, perm=[1, 0, 2])
         return sol
 
     def method(self):
