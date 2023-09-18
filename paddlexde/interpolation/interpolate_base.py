@@ -6,6 +6,12 @@ from paddle import nn
 
 class InterpolationBase(nn.Layer, metaclass=abc.ABCMeta):
     def __init__(self, series, t=None, **kwargs):
+        """_summary_
+
+        Args:
+            series (_type_): [B, T, D]
+            t (_type_, optional): [B, T]. Defaults to None.
+        """
         super().__init__()
 
         if t is None:

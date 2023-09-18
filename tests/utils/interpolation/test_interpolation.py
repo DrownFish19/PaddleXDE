@@ -19,13 +19,16 @@ class TestInterpolationForFixedDeriv(unittest.TestCase):
                 paddle.zeros([2000]),
             ],
             axis=-1,
-        ).unsqueeze(0)
-        self.t = paddle.arange(0, 2000, 1)
+        ).unsqueeze(
+            0
+        )  # [B, T, D]
+        self.t = paddle.arange(0, 2000, 1).unsqueeze(0)  # [B, T]
 
-        self.t_eval = 21.12
+        self.t_eval = paddle.to_tensor([1, 21.12])  # [B, T]
         self.val_tgt = (
             paddle.to_tensor([self.t_eval * 0.5, 0]).unsqueeze(0).unsqueeze(0)
-        )
+        )  # [B, T, D]
+        # [B, T, D]
         self.tgt_deri = paddle.to_tensor([0.5, 0]).unsqueeze(0).unsqueeze(0)
 
     def test_LinearInterpolation(self):
@@ -53,17 +56,19 @@ class TestInterpolationForDynamicDeriv(unittest.TestCase):
                 paddle.zeros([2000]),
             ],
             axis=-1,
-        ).unsqueeze(0)
+        ).unsqueeze(
+            0
+        )  # [B, T, D]
         self.series = paddle.sin(self.series)
-        self.t = paddle.arange(0, 20, 0.01)
+        self.t = paddle.arange(0, 20, 0.01).unsqueeze(0)  # [B, T]
 
-        self.t_eval = 16.5
+        self.t_eval = paddle.to_tensor([1, 16.5])  # [B, T]
         self.val_tgt = paddle.sin(
-            paddle.to_tensor([self.t_eval, 0]).unsqueeze(0).unsqueeze(0)
-        )
+            paddle.to_tensor([16.5, 0]).unsqueeze(0).unsqueeze(0)
+        )  # [B, T, D]
         self.tgt_deri = paddle.cos(
-            paddle.to_tensor([self.t_eval, 0]).unsqueeze(0).unsqueeze(0)
-        )
+            paddle.to_tensor([16.5, 0]).unsqueeze(0).unsqueeze(0)
+        )  # [B, T, D]
         self.tgt_deri[:, :, 1] = 0
 
     def test_LinearInterpolation(self):
