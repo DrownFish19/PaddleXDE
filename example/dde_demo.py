@@ -31,8 +31,8 @@ class DDEDataset(SimpleDemoData):
 class DDEFunc(nn.Layer):
     def __init__(self):
         super().__init__()
-        self.linear1 = nn.Linear(2, 2 * 2)
-        self.linear2 = nn.Linear(2 * 2, 2)
+        self.linear1 = nn.Linear(2, 128)
+        self.linear2 = nn.Linear(128, 2)
 
     def forward(self, t, y0, lags, y_lags):
         """_summary_
@@ -84,7 +84,6 @@ if __name__ == "__main__":
             # batch_y        : [B, T, D], T is pred_len
             # batch_his      : [B, T, D], T is his_len
             # batch_his_span : [B, T], T is his_len
-            print("run")
             pred_y = xdeint(
                 func,
                 batch_y0,
@@ -103,7 +102,6 @@ if __name__ == "__main__":
             lags.stop_gradient = False
 
             global_step += 1
-            print(global_step)
             # retain_graph=True
             if global_step >= demo_utils.args.max_steps:
                 stop = True
@@ -117,13 +115,22 @@ if __name__ == "__main__":
                     true_y = data.true_y[his_len + 1 :].unsqueeze(0)  # [1, T, D]
                     his = data.true_y[:his_len].unsqueeze(0)  # [1, T, D]
                     his_span = data.t_span[:his_len].unsqueeze(0)  # [1, T]
-                    pred_y = xdeint(func, y0, t_span, lags, his, his_span, solver=Euler)
+                    pred_y = xdeint(
+                        func, y0, t_span, lags[0:1, ...], his, his_span, solver=Euler
+                    )
                     loss = paddle.mean(paddle.abs(pred_y - true_y))
                     print(
                         "Iter {:04d} | Total Loss {:.6f}".format(
                             global_step, loss.item()
                         )
                     )
-                    demo_utils.visualize(pred_y, func, global_step)
+                    demo_utils.visualize(
+                        pred_y,
+                        func,
+                        global_step,
+                        t_span.squeeze(0),
+                        true_y.squeeze(0),
+                        vector_field=False,
+                    )
 
     demo_utils.stop()
