@@ -40,16 +40,29 @@ class LinearInterpolation(InterpolationBase):
         self._h = h
 
     def _make_series(self, series, t):
+        """_summary_
+
+        Args:
+            series (_type_): [B, T, D]
+            t (_type_): [B, T]
+
+            Note: B can be ignored
+
+        Returns:
+            _type_: _description_
+        """
         scale = t[..., 1:] - t[..., :-1]
         scale1 = paddle.concat([scale, scale[..., -1:]], axis=-1)
         scale2 = paddle.concat([scale[..., :1], scale1[..., :-1]], axis=-1)
 
         series1 = series
         series2 = paddle.concat([series1[..., 1:, :], series[..., -1:, :]], axis=-2)
+
+        # [B, T, 2, D]
         series_r = paddle.stack(
             [series1 / scale1.unsqueeze(-1), series2 / scale2.unsqueeze(-1)],
             axis=-2,
-        )  # [B, T, S, D]
+        )
 
         return series_r, scale1
 
@@ -63,20 +76,25 @@ class LinearInterpolation(InterpolationBase):
             t_list = [paddle.ones_like(t), paddle.zeros_like(t)]
 
         t_tensor = paddle.stack(t_list, axis=-1).unsqueeze(-2)
-        return t_tensor  # [1, 2]
+        return t_tensor  # [B, 1, 2]
 
     def ps(self, index):
-        axis_b = paddle.arange(self._batch_size)[:, None, None]
-        axis_index = index[:, :, None]
-        axis_d = paddle.arange(self._dims)[None, None, :]
+        """_summary_
 
-        p = paddle.stack(
+        Args:
+            index (_type_): _description_
+
+        Returns:
+            _type_: _description_
+        """
+        p = paddle.concat(
             [
-                (self._series_arr[..., 0, :])[axis_b, axis_index, axis_d],
-                (self._series_arr[..., 1, :])[axis_b, axis_index, axis_d],
+                (self._series_arr[..., index : index + 1, 0, :]),
+                (self._series_arr[..., index : index + 1, 1, :]),
             ],
             axis=-2,
         )
+        # [B, 2, D]
         return p
 
 
@@ -115,9 +133,20 @@ class CubicHermiteSpline(InterpolationBase):
         self._h = h
 
     def _make_series(self, series, t):
-        scale = t[1:] - t[:-1]
-        scale1 = paddle.concat([scale, scale[-1:]])
-        scale2 = paddle.concat([scale[:1], scale1[:-1]])
+        """_summary_
+
+        Args:
+            series (_type_): [B, T, D]
+            t (_type_): [B, T]
+
+            Note: B can be ignored
+
+        Returns:
+            _type_: _description_
+        """
+        scale = t[..., 1:] - t[..., :-1]
+        scale1 = paddle.concat([scale, scale[..., -1:]])
+        scale2 = paddle.concat([scale[..., :1], scale1[..., :-1]])
 
         series1 = series
         series2 = paddle.concat([series1[..., 1:, :], series[..., -1:, :]], axis=-2)
@@ -129,8 +158,19 @@ class CubicHermiteSpline(InterpolationBase):
         return series_r, scale1
 
     def _make_derivative(self, series, t):
-        diffs_t = t[1:] - t[:-1]
-        diffs_t1 = paddle.concat([diffs_t, diffs_t[-1:]])
+        """_summary_
+
+        Args:
+            series (_type_): [B, T, D]
+            t (_type_): [B, T]
+
+            Note: B can be ignored
+
+        Returns:
+            _type_: _description_
+        """
+        diffs_t = t[..., 1:] - t[..., :-1]
+        diffs_t1 = paddle.concat([diffs_t, diffs_t[..., -1:]])
 
         diffs_series = series[..., 1:, :] - series[..., :-1, :]
         diffs_series = paddle.concat([diffs_series, diffs_series[..., -1:, :]], axis=-2)
@@ -198,16 +238,29 @@ class BezierSpline(InterpolationBase):
         self._h = h
 
     def _make_series(self, series, t):
-        scale = t[3:] - t[:-3]
-        scale1 = paddle.concat([scale, scale[-1:], scale[-1:], scale[-1:]])
-        scale2 = paddle.concat([scale[:1], scale1[:-1]])
-        scale3 = paddle.concat([scale[:1], scale2[:-1]])
-        scale4 = paddle.concat([scale[:1], scale3[:-1]])
+        """_summary_
+
+        Args:
+            series (_type_): [B, T, D]
+            t (_type_): [B, T]
+
+        Returns:
+            _type_: _description_
+        """
+        scale = t[..., 3:] - t[..., :-3]
+        scale1 = paddle.concat(
+            [scale, scale[..., -1:], scale[..., -1:], scale[..., -1:]]
+        )
+        scale2 = paddle.concat([scale[..., :1], scale1[..., :-1]])
+        scale3 = paddle.concat([scale[..., :1], scale2[..., :-1]])
+        scale4 = paddle.concat([scale[..., :1], scale3[..., :-1]])
 
         series1 = series
         series2 = paddle.concat([series1[..., 1:, :], series[..., -1:, :]], axis=-2)
         series3 = paddle.concat([series2[..., 1:, :], series[..., -1:, :]], axis=-2)
         series4 = paddle.concat([series3[..., 1:, :], series[..., -1:, :]], axis=-2)
+
+        # [B, T, 4, D]
         series_r = paddle.stack(
             [
                 series1 / scale1.unsqueeze(-1),

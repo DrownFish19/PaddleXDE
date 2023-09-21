@@ -13,21 +13,20 @@ from paddlexde.interpolation import (
 class TestInterpolationForFixedDeriv(unittest.TestCase):
     @classmethod
     def setUpClass(self):
+        # [B, T, D]
         self.series = paddle.stack(
             [
                 paddle.cast(paddle.arange(0, 1000, 0.5), dtype="float32"),
                 paddle.zeros([2000]),
             ],
             axis=-1,
-        ).unsqueeze(
-            0
-        )  # [B, T, D]
-        self.t = paddle.arange(0, 2000, 1).unsqueeze(0)  # [B, T]
-
-        self.t_eval = paddle.to_tensor([1, 21.12])  # [B, T]
-        self.val_tgt = (
-            paddle.to_tensor([self.t_eval * 0.5, 0]).unsqueeze(0).unsqueeze(0)
-        )  # [B, T, D]
+        ).unsqueeze(0)
+        # [B, T]
+        self.t = paddle.arange(0, 2000, 1).unsqueeze(0)
+        # [B, T]
+        self.t_eval = paddle.to_tensor([[21.12]])
+        # [B, T, D]
+        self.val_tgt = paddle.to_tensor([21.12 * 0.5, 0]).unsqueeze(0).unsqueeze(0)
         # [B, T, D]
         self.tgt_deri = paddle.to_tensor([0.5, 0]).unsqueeze(0).unsqueeze(0)
 
@@ -50,19 +49,18 @@ class TestInterpolationForFixedDeriv(unittest.TestCase):
 class TestInterpolationForDynamicDeriv(unittest.TestCase):
     @classmethod
     def setUpClass(self):
+        # [B, T, D]
         self.series = paddle.stack(
             [
                 paddle.cast(paddle.arange(0, 20, 0.01), dtype="float32"),
                 paddle.zeros([2000]),
             ],
             axis=-1,
-        ).unsqueeze(
-            0
-        )  # [B, T, D]
+        ).unsqueeze(0)
         self.series = paddle.sin(self.series)
         self.t = paddle.arange(0, 20, 0.01).unsqueeze(0)  # [B, T]
 
-        self.t_eval = paddle.to_tensor([1, 16.5])  # [B, T]
+        self.t_eval = paddle.to_tensor([[16.5]])  # [B, T]
         self.val_tgt = paddle.sin(
             paddle.to_tensor([16.5, 0]).unsqueeze(0).unsqueeze(0)
         )  # [B, T, D]
@@ -88,4 +86,4 @@ class TestInterpolationForDynamicDeriv(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    unittest.main(TestInterpolationForFixedDeriv())

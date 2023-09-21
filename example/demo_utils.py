@@ -168,7 +168,10 @@ class SimpleDemoData(Dataset):
         for i in range(self.config.pred_len):
             t_span.append(self.t_span[idx + i])
             tgt_y.append(self.true_y[idx + i, :])
-        t_span = paddle.concat(t_span)
+        try:
+            t_span = paddle.concat(t_span)
+        except:
+            t_span = paddle.stack(t_span)
         tgt_y = paddle.stack(tgt_y)
 
         # [D], [T], [T, D], T is pred_len
