@@ -66,12 +66,24 @@ class DemoUtils:
             self.ax_vecfield = self.fig.add_subplot(133, frameon=False)
             plt.ion()
 
-    def visualize(self, pred_y, odefunc, steps):
+    def visualize(
+        self,
+        pred_y,
+        odefunc,
+        steps,
+        t_span=None,
+        true_y=None,
+        vector_field=True,
+    ):
         if not self.args.viz:
             return
 
-        t_span = self.data.t_span.cpu().numpy()
-        true_y = self.data.true_y.cpu().numpy()
+        t_span = (
+            self.data.t_span.cpu().numpy() if t_span is None else t_span.cpu().numpy()
+        )
+        true_y = (
+            self.data.true_y.cpu().numpy() if true_y is None else true_y.cpu().numpy()
+        )
         pred_y = pred_y.cpu().numpy()[0]
 
         self.ax_traj.cla()
@@ -98,19 +110,22 @@ class DemoUtils:
         self.ax_vecfield.set_xlabel("x")
         self.ax_vecfield.set_ylabel("y")
 
-        y, x = np.mgrid[-2:2:21j, -2:2:21j]
-        input_y = paddle.to_tensor(
-            np.stack([x, y], -1).reshape(21 * 21, 2), dtype=paddle.float32
-        )
+        if vector_field:
+            y, x = np.mgrid[-2:2:21j, -2:2:21j]
+            input_y = paddle.to_tensor(
+                np.stack([x, y], -1).reshape(21 * 21, 2), dtype=paddle.float32
+            )
 
-        dydt = odefunc(t=0, y=input_y).cpu().detach().numpy()
-        mag = np.sqrt(dydt[:, 0] ** 2 + dydt[:, 1] ** 2).reshape(-1, 1)
-        dydt = dydt / mag
-        dydt = dydt.reshape(21, 21, 2)
+            dydt = odefunc(t=0, y=input_y).cpu().detach().numpy()
+            mag = np.sqrt(dydt[:, 0] ** 2 + dydt[:, 1] ** 2).reshape(-1, 1)
+            dydt = dydt / mag
+            dydt = dydt.reshape(21, 21, 2)
 
-        self.ax_vecfield.streamplot(x, y, dydt[:, :, 0], dydt[:, :, 1], color="black")
-        self.ax_vecfield.set_xlim(-2, 2)
-        self.ax_vecfield.set_ylim(-2, 2)
+            self.ax_vecfield.streamplot(
+                x, y, dydt[:, :, 0], dydt[:, :, 1], color="black"
+            )
+            self.ax_vecfield.set_xlim(-2, 2)
+            self.ax_vecfield.set_ylim(-2, 2)
 
         self.fig.tight_layout()
         self.fig.show()
@@ -153,7 +168,10 @@ class SimpleDemoData(Dataset):
         for i in range(self.config.pred_len):
             t_span.append(self.t_span[idx + i])
             tgt_y.append(self.true_y[idx + i, :])
-        t_span = paddle.concat(t_span)
+        try:
+            t_span = paddle.concat(t_span)
+        except:
+            t_span = paddle.stack(t_span)
         tgt_y = paddle.stack(tgt_y)
 
         # [D], [T], [T, D], T is pred_len

@@ -6,6 +6,14 @@ from paddle import nn
 
 class InterpolationBase(nn.Layer, metaclass=abc.ABCMeta):
     def __init__(self, series, t=None, **kwargs):
+        """_summary_
+
+        Args:
+            series (_type_): [B, T, D]
+            t (_type_, optional): [B, T]. Defaults to None.
+
+            the B dim can be ignored
+        """
         super().__init__()
 
         if t is None:
@@ -26,7 +34,14 @@ class InterpolationBase(nn.Layer, metaclass=abc.ABCMeta):
         self._series_arr = series_arr
         self._series = series
         self._derivs = derivs
-        self._batch_size, self._seq_len, self._dims = series.shape
+
+        if len(series.shape) == 2:
+            self._seq_len, self._dims = series.shape
+            self._batch_size = None
+        elif len(series.shape) == 3:
+            self._batch_size, self._seq_len, self._dims = series.shape
+        else:
+            raise ValueError
 
     @property
     def grid_points(self):
@@ -42,7 +57,8 @@ class InterpolationBase(nn.Layer, metaclass=abc.ABCMeta):
         """Calculates the index of the given time point t in the list of time points.
 
         Args:
-            t (_type_): time point t
+            t (_type_): time point t [B, T]
+            B can be ignored => [T]
 
         Raises:
             NotImplementedError:
@@ -51,30 +67,35 @@ class InterpolationBase(nn.Layer, metaclass=abc.ABCMeta):
             The index of the given time point t in the list of time points.
         """
         t = paddle.to_tensor(t, dtype=self._series.dtype)
+        if len(t.shape) == 1:
+            t = t.expand([self._batch_size, t.shape[-1]])
         maxlen = self._series.shape[-2] - 1
+
+        # [B, T], [B, T], [B, T]
         t_shape, _t_shape, _scale_t_shape = t.shape, self._t.shape, self._scale_t.shape
 
         index = []
         norm_t = []
-        ts_tensor = []
-        for t_i, _t_i, _scale_t_i in zip(
-            paddle.reshape(t, shape=[-1, t_shape[-1]]),
-            paddle.reshape(self._t, shape=[-1, _t_shape[-1]]),
-            paddle.reshape(self._scale_t, shape=[-1, _scale_t_shape[-1]]),
-        ):
+
+        t = paddle.reshape(t, shape=[-1, t_shape[-1]])
+        _t = paddle.reshape(self._t, shape=[-1, _t_shape[-1]])
+        _scale_t = paddle.reshape(self._scale_t, shape=[-1, _scale_t_shape[-1]])
+
+        for bs in range(self._batch_size):
+            t_i, _t_i, _scale_t_i = t[bs], _t[bs], _scale_t[bs]
             # clamp because t may go outside of [t[0], t[-1]]; this is fine
             # will never access the last element of self._t; this is correct behaviour
-            index_i = (paddle.bucketize(t_i, _t_i) - 1).clip(0, maxlen)
-            norm_t_i = (t_i - _t_i[index_i]) / _scale_t_i[index_i]
-            ts_i = self.ts(norm_t_i, der=der)
-
+            index_i = (paddle.bucketize(t_i, _t_i) - 1).clip(0, maxlen)  # [T]
+            norm_t_i = (t_i - _t_i[index_i]) / _scale_t_i[index_i]  # [T]
             index.append(index_i)
             norm_t.append(norm_t_i)
-            ts_tensor.append(ts_i)
 
-        index = paddle.stack(index, axis=0).reshape(t_shape)
-        ts_tensor = paddle.stack(ts_tensor, axis=0).reshape([*t_shape, *ts_i.shape[1:]])
+        index = paddle.stack(index, axis=0).reshape(t_shape)  # [B, T]
+        norm_t = paddle.stack(norm_t, axis=0).reshape(t_shape)  # [B, T]
 
+        # [B, T, 1, M], M is 2 for linear, 4 for cubic
+        ts_tensor = self.ts(norm_t, der=der)
+        # [B, T, M, D], M is 2 for linear, 4 for cubic
         ps_tensor = self.ps(index)
 
         return ts_tensor, ps_tensor, index
@@ -91,10 +112,14 @@ class InterpolationBase(nn.Layer, metaclass=abc.ABCMeta):
         Retruns:
             The value at the time point t.
         """
-
+        # [B, T, 1, M], [B, T, M, D], [B, T]
         ts_tensor, ps_tensor, index = self.interpolate(t, der=False)
-        result = ts_tensor @ self._h.to_dense() @ ps_tensor
-        result *= self._scale_t[index : index + 1]
+        # [B, T, 1, D] => [B, T, D]
+        result = (ts_tensor @ self._h.to_dense() @ ps_tensor).squeeze(-2)
+        axis_b = paddle.arange(self._batch_size)[:, None]
+        axis_index = index[:, :]
+        scale = self._scale_t[axis_b, axis_index].unsqueeze(-1)  # [B, T, 1]
+        result *= scale
         return result
 
     def derivative(self, t):
@@ -109,10 +134,12 @@ class InterpolationBase(nn.Layer, metaclass=abc.ABCMeta):
         Returns:
             The derivative of the function at the point t.
         """
+        # [B, T, 1, M], [B, T, M, D], [B, T]
         ts_tensor, ps_tensor, index = self.interpolate(t, der=True)
-        result = ts_tensor @ self._h.to_dense() @ ps_tensor
+        # [B, T, 1, D] => [B, T, D]
+        result = (ts_tensor @ self._h.to_dense() @ ps_tensor).squeeze(-2)
         # result *= self._scale_t[index : index + 1]
-        return result.squeeze(-2)
+        return result
 
     @abc.abstractmethod
     def _make_series(self, series, t):
@@ -141,7 +168,7 @@ class InterpolationBase(nn.Layer, metaclass=abc.ABCMeta):
         """return P tensor
 
         Args:
-            index (int): index of time point
+            index (int): index of time point, [T]
 
         Raises:
             NotImplementedError: _description_
