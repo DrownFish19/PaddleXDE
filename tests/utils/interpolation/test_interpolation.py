@@ -83,7 +83,3 @@ class TestInterpolationForDynamicDeriv(unittest.TestCase):
         interp = BezierSpline(self.series, self.t)
         assert paddle.allclose(self.val_tgt, interp.evaluate(self.t_eval), rtol=5e-2)
         assert paddle.allclose(self.tgt_deri, interp.derivative(self.t_eval), rtol=1e-2)
-
-
-if __name__ == "__main__":
-    unittest.main(TestInterpolationForFixedDeriv())
