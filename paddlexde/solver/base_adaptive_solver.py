@@ -12,23 +12,22 @@ class AdaptiveSolver(metaclass=abc.ABCMeta):
         self.xde = xde
         self.move = self.xde.move
         self.fuse = self.xde.fuse
-        self.get_dy = self.xde.get_dy
 
     @abc.abstractmethod
-    def _before_integrate(self, t):
-        pass
+    def _before_integrate(self, t_span):
+        raise NotImplementedError
 
     @abc.abstractmethod
     def step(self, next_t):
         raise NotImplementedError
 
-    def integrate(self, t):
-        solution = paddle.empty([len(t), *self.y0.shape], dtype=self.y0.dtype)
+    def integrate(self, t_span):
+        solution = paddle.empty([len(t_span), *self.y0.shape], dtype=self.y0.dtype)
         solution[0] = self.y0
-        t = t.astype(self.dtype)
-        self._before_integrate(t)
-        for i in range(1, len(t)):
-            solution[i] = self.step(t[i])
+        t_span = t_span.astype(self.dtype)
+        self._before_integrate(t_span)
+        for i in range(1, len(t_span)):
+            solution[i] = self.step(t_span[i])
         return solution
 
     def select_initial_step(self, t0, y0, order, rtol, atol, f0=None):
@@ -51,7 +50,7 @@ class AdaptiveSolver(metaclass=abc.ABCMeta):
         scale = atol + paddle.abs(y0) * rtol
 
         d0 = self.norm(y0 / scale).abs()
-        d1 = self.norm(self.get_dy(f0) / scale).abs()
+        d1 = self.norm(f0 / scale).abs()
 
         if d0 < 1e-5 or d1 < 1e-5:
             h0 = paddle.to_tensor(1e-6, dtype=dtype)
@@ -62,7 +61,7 @@ class AdaptiveSolver(metaclass=abc.ABCMeta):
         y1 = self.fuse(f0, h0, y0)
         f1 = self.move(t0 + h0, 0, y1)
 
-        d2 = paddle.abs(self.norm((self.get_dy(f1) - self.get_dy(f0)) / scale) / h0)
+        d2 = paddle.abs(self.norm((f1 - f0) / scale) / h0)
 
         if d1 <= 1e-15 and d2 <= 1e-15:
             h1 = paddle.max(paddle.to_tensor(1e-6, dtype=dtype), h0 * 1e-3)

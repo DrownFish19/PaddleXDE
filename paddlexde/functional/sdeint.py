@@ -27,7 +27,7 @@ def sdeint(
     where y is a Tensor or tuple of Tensors of any shape.
     """
 
-    xde = BaseSDE(f=drift, g=diffusion, y0=y0, t=t, reverse=reverse)
+    xde = BaseSDE(f=drift, g=diffusion, y0=y0, t_span=t, reverse=reverse)
 
     s = solver(xde=xde, y0=xde.y0, rtol=rtol, atol=atol, **options)
     solution = s.integrate(t)

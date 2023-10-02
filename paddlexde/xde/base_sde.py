@@ -9,17 +9,19 @@ from .base_xde import BaseXDE
 
 
 class BaseSDE(BaseXDE):
-    """Base class for all ODEs."""
+    """
+    Base class for all SDEs.
+    """
 
     def __init__(
         self,
         f: Union[nn.Layer, callable],
         g: Union[nn.Layer, callable],
         y0: Union[tuple, paddle.Tensor],
-        t: Union[list, paddle.Tensor],
+        t_span: Union[list, paddle.Tensor],
         reverse=False,
     ):
-        super(BaseSDE, self).__init__(name="SDE", var_nums=2, y0=y0, t=t)
+        super(BaseSDE, self).__init__(name="SDE", var_nums=2, y0=y0, t_span=t_span)
         self.f = f
         self.g = g
 
@@ -31,10 +33,10 @@ class BaseSDE(BaseXDE):
             self.state_size = y0.shape[1]
 
         self.bm = BrownianInterval(
-            t0=t[0], t1=t[-1], size=(self.batch_size, self.state_size)
+            t0=t_span[0], t1=t_span[-1], size=(self.batch_size, self.state_size)
         )
         if reverse:
-            t.clip(0)
+            t_span.clip(0)
 
     def handle(self, h, ts):
         pass
@@ -56,7 +58,4 @@ class BaseSDE(BaseXDE):
         return paddle.stack([dy, dg])
 
     def fuse(self, dy, dt, y0):
-        return y0 + dy[0] * dt + dy[1]
-
-    def get_dy(self, dy):
-        return dy[0]
+        return y0 + dy * dt + dy  # TODO different dy

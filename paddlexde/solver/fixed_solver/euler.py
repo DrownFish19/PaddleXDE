@@ -8,4 +8,4 @@ class Euler(FixedSolver):
         dt = t1 - t0
         dy = self.move(t0, dt, y0)
         y1 = self.fuse(dy, dt, y0)
-        return y1, self.get_dy(dy)
+        return y1, dy

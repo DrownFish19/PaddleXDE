@@ -1,23 +1,25 @@
 from setuptools import setup
 
+from paddlexde import __version__
+
 
 def main():
 
     packages = [
         "paddlexde",
         "paddlexde.functional",
+        "paddlexde.interpolation",
         "paddlexde.solver",
         "paddlexde.solver.adaptive_solver",
         "paddlexde.solver.fixed_solver",
         "paddlexde.utils",
-        "paddlexde.utils.interpolation",
         "paddlexde.utils.brownian",
         "paddlexde.xde",
     ]
 
     setup(
         name="paddlexde",
-        version="0.1.0",
+        version=__version__,
         description="PaddleXDE is a libarary that helps you build deep learning applications for PaddlePaddle using ordinary differential equations.",
         author="drownfish19",
         author_email="drownfish19@gmail.com",

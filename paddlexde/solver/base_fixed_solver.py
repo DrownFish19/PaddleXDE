@@ -3,6 +3,7 @@ from typing import Union
 
 import paddle
 
+from ..interpolation.functional import cubic_hermite_interp, linear_interp
 from ..xde.base_xde import BaseXDE
 
 _one_third = 1 / 3
@@ -26,10 +27,11 @@ class FixedSolver(metaclass=abc.ABCMeta):
         """API for solvers with possibly adaptive time stepping.
 
         :param xde: BaseXDE, including BaseODE, BaseSDE, BaseCDE and so on.
-        :param y0:
-        :param step_size:
+        :param y0: [B, D] Tensor of initial state. NOTE: The input should always be a len of size 1,
+                    thus we ignore len dim.
+        :param step_size: defualt step size will be calculated based on the number of steps needed.
         :param grid_constructor:
-        :param interp:
+        :param interp: ["linear", "cubic"] for linear interpolation and cubic interpolation.
         :param perturb:
         :param kwargs:
         """
@@ -59,16 +61,26 @@ class FixedSolver(metaclass=abc.ABCMeta):
 
         self.move = self.xde.move
         self.fuse = self.xde.fuse
-        self.get_dy = self.xde.get_dy
 
     @staticmethod
     def _grid_constructor_from_step_size(step_size):
         def _grid_constructor(y0, t):
-            start_time = t[0]
-            end_time = t[-1]
+            """_summary_
+
+            Args:
+                y0 (_type_): [B, D]
+                t (_type_): [B, T], T is pred_len
+
+            Returns:
+                _type_: _description_
+            """
+            start_time = t[..., 0]
+            end_time = t[..., -1]
 
             niters = paddle.ceil((end_time - start_time) / step_size + 1).item()
-            t_infer = paddle.arange(0, niters, dtype=t.dtype) * step_size + start_time
+            t_infer = (
+                paddle.arange(0, niters, dtype=t.dtype) * step_size + start_time
+            )  # todo
             t_infer[-1] = t[-1]
 
             return t_infer
@@ -80,58 +92,56 @@ class FixedSolver(metaclass=abc.ABCMeta):
         """Propose a step with step size from time t to time next_t, with
          current state y.
 
-        :param t0:
-        :param t1:
-        :param y0:
+        :param t0: [B, 1]
+        :param t1: [B, 1]
+        :param y0: [B, 1, D]
         :return:
         """
-        pass
+        raise NotImplementedError
 
-    def integrate(self, t):
-        time_grid = self.grid_constructor(self.y0, t)
-        assert time_grid[0] == t[0] and time_grid[-1] == t[-1]
+    def integrate(self, t_span: paddle.Tensor):
+        """_summary_
 
-        solution = paddle.empty([len(t), *self.y0.shape], dtype=self.y0.dtype)
-        solution[0] = self.y0
+        Args:
+            t_span (paddle.Tensor): [batch_size, pred_len]
 
-        j = 1
+        Raises:
+            ValueError: _description_
+
+        Returns:
+            _type_: _description_
+        """
+
+        batch_size, pred_len = t_span.shape
+        time_grid = self.grid_constructor(self.y0, t_span)
+        # time_grid = t_span
+        assert paddle.equal_all(time_grid[..., 0], t_span[..., 0])
+        assert paddle.equal_all(time_grid[..., -1], t_span[..., -1])
+
+        # sol solution [pred_len, batch_size, dims]
+        sol = paddle.empty(shape=[pred_len] + self.y0.shape, dtype=self.y0.dtype)
+        sol[0] = self.y0
+
         y0 = self.y0
-        for t0, t1 in zip(time_grid[:-1], time_grid[1:]):
+
+        for i in range(1, pred_len):
+            t0, t1 = time_grid[..., i - 1 : i], time_grid[..., i : i + 1]
             y1, dy0 = self.step(t0, t1, y0)
 
-            while j < len(t) and t1 >= t[j]:
-                if self.interp == "linear":
-                    solution[j] = self._linear_interp(t0, t1, y0, y1, t[j])
-                elif self.interp == "cubic":
-                    _, dy1 = self.step(t1, t1, y1)
-                    solution[j] = self._cubic_hermite_interp(
-                        t0, y0, dy0, t1, y1, dy1, t[j]
-                    )
-                else:
-                    raise ValueError(f"Unknown interpolation method {self.interp}")
-                j += 1
+            # while j < pred_len and paddle.greater_equal(t1, t_span[..., j]):
+            if self.interp == "linear":
+                sol[i] = linear_interp(t0, t1, y0, y1, t_span[..., i : i + 1])
+            elif self.interp == "cubic":
+                y2, dy1 = self.step(t1, t1, y1)
+                sol[i] = cubic_hermite_interp(
+                    t0, y0, dy0, t1, y1, dy1, t_span[..., i : i + 1]
+                )
+            else:
+                raise ValueError(f"Unknown interpolation method {self.interp}")
+
             y0 = y1
 
-        return solution
-
-    @staticmethod
-    def _cubic_hermite_interp(t0, y0, f0, t1, y1, f1, t):
-        h = (t - t0) / (t1 - t0)
-        h00 = (1 + 2 * h) * (1 - h) * (1 - h)
-        h10 = h * (1 - h) * (1 - h)
-        h01 = h * h * (3 - 2 * h)
-        h11 = h * h * (h - 1)
-        dt = t1 - t0
-        return h00 * y0 + h10 * dt * f0 + h01 * y1 + h11 * dt * f1
-
-    @staticmethod
-    def _linear_interp(t0, t1, y0, y1, t):
-        if t == t0:
-            return y0
-        if t == t1:
-            return y1
-        slope = (t - t0) / (t1 - t0)
-        return y0 + slope * (y1 - y0)
+        return sol
 
     def rk4_step_func(self, t0, t1, y0, f0=None):
         dt = t1 - t0
@@ -171,12 +181,12 @@ class FixedSolver(metaclass=abc.ABCMeta):
         k3 = self.move(
             t_two_thirds,
             dt_one_third,
-            self.fuse([n2 - n1 * _one_third for (n1, n2) in zip(k1, k2)], dt, y0),
+            self.fuse(k1 - k2 * _one_third, dt, y0),
         )
         k4 = self.move(
             t1,
             t_one_third,
-            self.fuse([n1 - n2 + n3 for (n1, n2, n3) in zip(k1, k2, k3)], dt, y0),
+            self.fuse(k1 - k2 + k3, dt, y0),
         )
 
         return (

@@ -32,15 +32,15 @@ class ScipyWrapperODESolver(metaclass=abc.ABCMeta):
         self.solver = solver
         self.func = convert_func_to_numpy(func, self.shape, self.device, self.dtype)
 
-    def integrate(self, t):
-        if t.numel() == 1:
+    def integrate(self, t_span):
+        if t_span.numel() == 1:
             return paddle.to_tensor(self.y0)[None].astype(self.dtype)
-        t = t.detach().cpu().numpy()
+        t_span = t_span.detach().cpu().numpy()
         sol = solve_ivp(
             self.func,
-            t_span=[t.min(), t.max()],
+            t_span=[t_span.min(), t_span.max()],
             y0=self.y0,
-            t_eval=t,
+            t_eval=t_span,
             method=self.solver,
             rtol=self.rtol,
             atol=self.atol,

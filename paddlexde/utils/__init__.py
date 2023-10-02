@@ -6,4 +6,3 @@ from .brownian import (
     ReverseBrownian,
     brownian_interval_like,
 )
-from .interpolation import BezierSpline, CubicHermiteSpline, LinearInterpolation
