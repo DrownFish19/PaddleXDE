@@ -1,0 +1,3 @@
+[submodule "example/CorrSTN/TrafficFlowData"]
+	path = example/CorrSTN/TrafficFlowData
+	url = https://github.com/DrownFish19/TrafficFlowData.git
