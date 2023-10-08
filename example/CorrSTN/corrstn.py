@@ -20,10 +20,10 @@ class CorrSTN(nn.Layer):
             training_args.decoder_input_size, training_args.d_model
         )
 
-        # self.encode_temporal_position = TemporalPositionalEmbedding(
-        #     training_args, max_len=2048
-        # )
-        # self.decode_temporal_position = deepcopy(self.encode_temporal_position)
+        self.encode_temporal_position = TemporalPositionalEmbedding(
+            training_args, max_len=2048
+        )
+        self.decode_temporal_position = deepcopy(self.encode_temporal_position)
 
         self.encode_spatial_position = SpatialPositionalEmbedding(
             training_args, GCN(training_args, adj_matrix)
@@ -82,15 +82,15 @@ class CorrSTN(nn.Layer):
 
     def encode(self, src, lookup_index):
         src_dense = self.encoder_dense(src)
-        # src_tp_embedding = self.encode_temporal_position(src_dense, lookup_index)
-        src_sp_embedding = self.encode_spatial_position(src_dense)
+        src_tp_embedding = self.encode_temporal_position(src_dense, lookup_index)
+        src_sp_embedding = self.encode_spatial_position(src_tp_embedding)
         encoder_output = self.encoder(src_sp_embedding)
         return encoder_output
 
     def decode(self, tgt, encoder_output):
         tgt_dense = self.encoder_dense(tgt)
-        # tgt_tp_embedding = self.decode_temporal_position(tgt_dense)
-        tgt_sp_embedding = self.decode_spatial_position(tgt_dense)
+        tgt_tp_embedding = self.decode_temporal_position(tgt_dense)
+        tgt_sp_embedding = self.decode_spatial_position(tgt_tp_embedding)
         decoder_output = self.decoder(x=tgt_sp_embedding, memory=encoder_output)
         return self.generator(decoder_output)
 
@@ -111,12 +111,8 @@ if __name__ == "__main__":
     from args import args
     from utils import norm_adj_matrix
 
-    corr = np.load("example/CorrSTN/data/HZME_OUTFLOW/SCORR_HZME_OUTFLOW_0.6_C16.npy")[
-        0
-    ]
+    corr = np.load(args.adj_path)[0]
     adj_matrix = paddle.to_tensor(norm_adj_matrix(corr), paddle.get_default_dtype())
-
-    from corrstn import CorrSTN
 
     nn.initializer.set_global_initializer(
         nn.initializer.XavierUniform(), nn.initializer.XavierUniform()

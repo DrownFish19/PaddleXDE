@@ -38,7 +38,6 @@ class CorrAttention(nn.Layer):
         super(CorrAttention, self).__init__()
         self.norm_sc_matrix = norm_sc_matrix
         self.k = attention_top_k
-        self.DAT = DynamicAttentionLayer(dropout=0.0)
 
         sc_top = norm_sc_matrix.topk(self.k, sorted=False)
         sc_top_v = sc_top[0]  # [C, N, K]
@@ -184,7 +183,6 @@ class MultiHeadAttentionAwareTemporalContext(nn.Layer):
         is_mask=False,
     ):
         """
-        if query/key has multiple time segments, causal convolution should be applied separately for each time segment.
         Args:
             query: (batch, N, T, d_model)
             key: (batch, N, T, d_model)

@@ -7,11 +7,18 @@ parser.add_argument("--devices", type=str, default="0,1,2,3,4,5,6,7", help="devi
 parser.add_argument("--use_gpu", type=bool, default=True, help="use gpu or not")
 
 # data config
-parser.add_argument("--dataset_name", type=str, default="kdd2022", help="dataset name")
+parser.add_argument(
+    "--dataset_name", type=str, default="HZME_OUTFLOW", help="dataset name"
+)
 parser.add_argument(
     "--data_path",
     type=str,
-    default="example/CorrSTN/data/HZME_OUTFLOW/HZME_OUTFLOW.npz",
+    default="example/CorrSTN/TrafficFlowData/HZME_OUTFLOW/HZME_OUTFLOW.npz",
+)
+parser.add_argument(
+    "--adj_path",
+    type=str,
+    default="example/CorrSTN/TrafficFlowData/HZME_OUTFLOW/SCORR_HZME_OUTFLOW_0.6_C16.npy",
 )
 parser.add_argument("--split", type=str, default="6:2:2", help="data split")
 parser.add_argument("--scale", type=bool, default=True, help="data norm scale")
@@ -36,15 +43,17 @@ parser.add_argument("--smooth_layer_num", type=int, default=1)
 
 
 # train config
-parser.add_argument("--learning_rate", type=float, default=0.00005)
-parser.add_argument("--weight_decay", type=float, default=0.0001)
+parser.add_argument("--learning_rate", type=float, default=1e-4)
+parser.add_argument("--weight_decay", type=float, default=0.1)
 parser.add_argument("--start_epoch", type=int, default=0, help="start epoch")
 parser.add_argument("--train_epochs", type=int, default=75, help="train epochs")
 parser.add_argument("--finetune_epochs", type=int, default=50, help="finetune epochs")
 parser.add_argument("--batch_size", type=int, default=4, help="batch_size")
-parser.add_argument("--patience", type=int, default=10, help="early stopping patience")
+parser.add_argument("--patience", type=int, default=5, help="early stopping patience")
 parser.add_argument("--loss", type=str, default="mse", help="loss function")
 parser.add_argument("--dropout", type=float, default=0.1, help="dropout")
+parser.add_argument("--continue_training", type=bool, default=False, help="")
+
 
 args = parser.parse_args("")
 os.environ["CUDA_VISIBLE_DEVICES"] = args.devices

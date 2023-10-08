@@ -1,9 +1,5 @@
-import os
-from copy import deepcopy
-
 import numpy as np
 import paddle
-import pandas as pd
 from paddle.io import DataLoader, Dataset
 
 
@@ -99,16 +95,8 @@ class ScalerMinMax(object):
         Returns:
             The transformed data
         """
-        _min = (
-            paddle.tensor(self.min).type_as(data).to(data.device)
-            if paddle.is_tensor(data)
-            else self.min
-        )
-        _max = (
-            paddle.tensor(self.max).type_as(data).to(data.device)
-            if paddle.is_tensor(data)
-            else self.max
-        )
+        _min = paddle.to_tensor(self.min) if paddle.is_tensor(data) else self.min
+        _max = paddle.to_tensor(self.max) if paddle.is_tensor(data) else self.max
         data = 1.0 * (data - _min) / (_max - _min)
         return 2.0 * data - 1.0
 
@@ -123,8 +111,8 @@ class ScalerMinMax(object):
             The original data
         """
 
-        _min = paddle.tensor(self.min) if paddle.is_tensor(data) else self.min
-        _max = paddle.tensor(self.max) if paddle.is_tensor(data) else self.max
+        _min = paddle.to_tensor(self.min) if paddle.is_tensor(data) else self.min
+        _max = paddle.to_tensor(self.max) if paddle.is_tensor(data) else self.max
         data = (data + 1.0) / 2.0
 
         if axis is None:
@@ -167,9 +155,7 @@ class TrafficFlowDataset(Dataset):
 
         if training_args.scale:
             self.scaler = ScalerMinMax()
-            train_data = self.origin_data[
-                : self.train_size, :, :
-            ]  # [N,T,F] #多属性，采用不同的scale
+            train_data = self.origin_data[: self.train_size, :, :]
             self.scaler.fit(train_data.reshape(-1, train_data.shape[-1]))
             self.data = self.scaler.transform(self.origin_data).reshape(
                 self.num_nodes, self.seq_len, self.dims
