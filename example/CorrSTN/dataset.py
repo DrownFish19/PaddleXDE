@@ -185,6 +185,10 @@ class TrafficFlowDataset(Dataset):
         his = self.data[:, his_begin:his_end, :]
         tgt = self.data[:, tgt_begin:tgt_end, :]
 
+        if tgt_begin % 288 < 60:
+            his = paddle.zeros_like(his) - 1
+            tgt = paddle.zeros_like(tgt) - 1
+        
         return his, tgt
 
     def __len__(self):

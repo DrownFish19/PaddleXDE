@@ -96,8 +96,11 @@ class Trainer:
         self.net = CorrSTN(self.training_args, adj_matrix=self.norm_adj_matrix)
 
         if self.training_args.continue_training:
+            # params_filename = os.path.join(
+            #     self.save_path, f"epoch_{self.start_epoch}.params"
+            # )
             params_filename = os.path.join(
-                self.save_path, f"epoch_{self.start_epoch}.params"
+                self.save_path, f"epoch_best.params"
             )
             self.net.load_state_dict(paddle.load(params_filename))
             self.logger.info(f"load weight from: {params_filename}")
@@ -120,12 +123,12 @@ class Trainer:
         self.lr_scheduler = CosineAnnealingWithWarmupDecay(
             max_lr=self.training_args.learning_rate,
             min_lr=self.training_args.learning_rate * 0.1,
-            warmup_step=200,
-            decay_step=2000,
+            warmup_step=10,
+            decay_step=30,
         )
 
         # 定义优化器，传入所有网络参数
-        self.optimizer = optim.AdamW(
+        self.optimizer = optim.Adam(
             parameters=self.net.parameters(),
             learning_rate=self.lr_scheduler,
             weight_decay=self.training_args.weight_decay,
@@ -154,7 +157,7 @@ class Trainer:
             self.net.train()  # ensure dropout layers are in train mode
             tr_s_time = time()
             epoch_step = 0
-
+            self.lr_scheduler.step()
             for batch_index, batch_data in enumerate(self.train_dataloader):
                 src, tgt = batch_data
                 _, training_loss = self.train_one_step(src, tgt)
@@ -172,11 +175,12 @@ class Trainer:
                 best_epoch = epoch
                 self.logger.info(f"best_epoch: {best_epoch}")
                 self.logger.info(f"eval_loss: {eval_loss.numpy()}")
-                self.compute_test_loss()
+                # self.compute_test_loss()
                 # save parameters
-                params_filename = os.path.join(self.save_path, f"epoch_{epoch}.params")
-                paddle.save(self.net.state_dict(), params_filename)
-                self.logger.info(f"save parameters to file: {params_filename}")
+                # params_filename = os.path.join(self.save_path, f"epoch_{epoch}.params")
+                # params_filename = os.path.join(self.save_path, f"epoch_best.params")
+                # paddle.save(self.net.state_dict(), params_filename)
+                # self.logger.info(f"save parameters to file: {params_filename}")
 
             self.early_stopping(val_loss=eval_loss)
             if self.early_stopping.early_stop:
@@ -188,16 +192,17 @@ class Trainer:
         self.logger.info(f"best epoch: {best_epoch}")
         self.logger.info("apply the best val model on the test dataset ...")
 
-        params_filename = os.path.join(self.save_path, f"epoch_{best_epoch}.params")
-        self.logger.info(f"load weight from: {params_filename}")
-        self.net.set_state_dict(paddle.load(params_filename))
-        self.compute_test_loss()
+        # params_filename = os.path.join(self.save_path, f"epoch_{best_epoch}.params")
+        # params_filename = os.path.join(self.save_path, f"epoch_best.params")
+        # self.logger.info(f"load weight from: {params_filename}")
+        # self.net.set_state_dict(paddle.load(params_filename))
         self.compute_test_loss()
 
     def _init_finetune(self):
         self.logger.info("Start FineTune Training")
-        params_filename = os.path.join(self.save_path, "epoch_{best_epoch}.params")
-        self.net.set_state_dict(paddle.load(params_filename))
+        # params_filename = os.path.join(self.save_path, f"epoch_{best_epoch}.params")
+        params_filename = os.path.join(self.save_path, f"epoch_best.params")
+        # self.net.set_state_dict(paddle.load(params_filename))
         self.logger.info(f"load weight from: {params_filename}")
 
         self.early_stopping.reset()
@@ -232,7 +237,6 @@ class Trainer:
             loss.backward()
             self.optimizer.step()
             self.optimizer.clear_grad()
-            self.lr_scheduler.step()
         return decoder_output, loss
 
     def compute_eval_loss(self):
