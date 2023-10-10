@@ -87,20 +87,20 @@ class CorrSTN(nn.Layer):
         encoder_output = self.encoder(src_sp_embedding)
         return encoder_output
 
-    def decode(self, tgt, encoder_output):
+    def decode(self, tgt, tgt_idx, encoder_output):
         tgt_dense = self.encoder_dense(tgt)
-        tgt_tp_embedding = self.decode_temporal_position(tgt_dense)
+        tgt_tp_embedding = self.decode_temporal_position(tgt_dense, tgt_idx)
         tgt_sp_embedding = self.decode_spatial_position(tgt_tp_embedding)
         decoder_output = self.decoder(x=tgt_sp_embedding, memory=encoder_output)
         return self.generator(decoder_output)
 
-    def forward(self, src, src_idx, tgt):
+    def forward(self, src, src_idx, tgt, tgt_idx):
         src = src.reshape([-1, self.training_args.num_nodes] + src.shape[-2:])
         src_idx = src_idx.reshape(
             [-1, self.training_args.num_nodes] + src_idx.shape[-1:]
         )
         encoder_output = self.encode(src, src_idx)
-        output = self.decode(tgt, encoder_output)
+        output = self.decode(tgt, tgt_idx, encoder_output)
         return output
 
 

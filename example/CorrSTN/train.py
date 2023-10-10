@@ -229,7 +229,12 @@ class Trainer:
         encoder_idx = paddle.concat(encoder_idx).expand(
             [self.training_args.batch_size, self.training_args.num_nodes, -1]
         )
-        decoder_output = self.net(src=encoder_input, src_idx=encoder_idx, tgt=tgt)
+        decoder_idx = paddle.arange(
+            start=self.training_args.his_len, end=self.training_args.his_len + 12
+        ).expand(
+            [self.training_args.batch_size, self.training_args.num_nodes, -1]
+        )
+        decoder_output = self.net(src=encoder_input, src_idx=encoder_idx, tgt=tgt, tgt_idx = decoder_idx)
         decoder_output = paddle.where(tgt > -1, decoder_output, tgt)
         loss = self.criterion1(decoder_output, tgt)
 
