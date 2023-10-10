@@ -230,12 +230,7 @@ class Trainer:
         encoder_idx = paddle.concat(encoder_idx).expand(
             [self.training_args.batch_size, self.training_args.num_nodes, -1]
         )
-        decoder_idx = paddle.arange(
-            start=self.training_args.his_len, end=self.training_args.his_len + 12
-        ).expand(
-            [self.training_args.batch_size, self.training_args.num_nodes, -1]
-        )
-        decoder_output = self.net(src=encoder_input, src_idx=encoder_idx, tgt=tgt, tgt_idx = decoder_idx)
+        decoder_output = self.net(src=encoder_input, src_idx=encoder_idx, tgt=tgt)
         # decoder_output = paddle.where(tgt == -1, tgt, decoder_output)
         loss = self.criterion2(decoder_output, tgt)
 
@@ -269,10 +264,6 @@ class Trainer:
         fix_hour = paddle.arange(
             start=self.training_args.his_len - 12, end=self.training_args.his_len
         )
-        # tgt_idx = paddle.arange(
-        #     start=self.training_args.his_len,
-        #     end=self.training_args.his_len + self.training_args.tgt_len,
-        # )
         encoder_idx = [fix_day, fix_hour]
         encoder_input = paddle.index_select(src, paddle.concat(encoder_idx), axis=2)
         encoder_idx = paddle.concat(encoder_idx).expand(
@@ -285,15 +276,8 @@ class Trainer:
         encoder_output = self.net.encode(encoder_input, encoder_idx)
 
         for step in range(self.training_args.tgt_len):
-            tgt_idx = paddle.arange(
-                start=self.training_args.his_len,
-                end=self.training_args.his_len + step + 1,
-            ).expand(
-                [self.training_args.batch_size, self.training_args.num_nodes, -1]
-            )
-            
             decoder_inputs = paddle.concat(decoder_input_list, axis=2)
-            predict_output = self.net.decode(decoder_inputs, tgt_idx, encoder_output)
+            predict_output = self.net.decode(decoder_inputs, encoder_output)
             decoder_input_list = [decoder_start_inputs, predict_output]
             
         return predict_output, None
