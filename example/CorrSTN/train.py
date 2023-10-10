@@ -18,6 +18,7 @@ from utils import (
     norm_adj_matrix,
 )
 
+# paddle.seed(2357)
 
 class Trainer:
     def __init__(self, training_args):
@@ -175,7 +176,7 @@ class Trainer:
                 best_epoch = epoch
                 self.logger.info(f"best_epoch: {best_epoch}")
                 self.logger.info(f"eval_loss: {eval_loss.numpy()}")
-                # self.compute_test_loss()
+                self.compute_test_loss()
                 # save parameters
                 # params_filename = os.path.join(self.save_path, f"epoch_{epoch}.params")
                 # params_filename = os.path.join(self.save_path, f"epoch_best.params")
@@ -235,8 +236,8 @@ class Trainer:
             [self.training_args.batch_size, self.training_args.num_nodes, -1]
         )
         decoder_output = self.net(src=encoder_input, src_idx=encoder_idx, tgt=tgt, tgt_idx = decoder_idx)
-        decoder_output = paddle.where(tgt > -1, decoder_output, tgt)
-        loss = self.criterion1(decoder_output, tgt)
+        # decoder_output = paddle.where(tgt == -1, tgt, decoder_output)
+        loss = self.criterion2(decoder_output, tgt)
 
         if self.net.training:
             loss.backward()
@@ -259,7 +260,44 @@ class Trainer:
             self.logger.info(f"eval cost time: {time() - start_time}s")
             self.logger.info(f"eval_loss: {eval_loss.numpy()}")
         return eval_loss
+    
+    def test_val_one_step(self, src, tgt):
+        fix_day = paddle.arange(
+            start=self.training_args.his_len - 288,
+            end=self.training_args.his_len - 288 + 12,
+        )
+        fix_hour = paddle.arange(
+            start=self.training_args.his_len - 12, end=self.training_args.his_len
+        )
+        # tgt_idx = paddle.arange(
+        #     start=self.training_args.his_len,
+        #     end=self.training_args.his_len + self.training_args.tgt_len,
+        # )
+        encoder_idx = [fix_day, fix_hour]
+        encoder_input = paddle.index_select(src, paddle.concat(encoder_idx), axis=2)
+        encoder_idx = paddle.concat(encoder_idx).expand(
+            [self.training_args.batch_size, self.training_args.num_nodes, -1]
+        )
+        
+        decoder_start_inputs = tgt[:, :, :1, :]
+        decoder_input_list = [decoder_start_inputs]
+        
+        encoder_output = self.net.encode(encoder_input, encoder_idx)
 
+        for step in range(self.training_args.tgt_len):
+            tgt_idx = paddle.arange(
+                start=self.training_args.his_len,
+                end=self.training_args.his_len + step + 1,
+            ).expand(
+                [self.training_args.batch_size, self.training_args.num_nodes, -1]
+            )
+            
+            decoder_inputs = paddle.concat(decoder_input_list, axis=2)
+            predict_output = self.net.decode(decoder_inputs, tgt_idx, encoder_output)
+            decoder_input_list = [decoder_start_inputs, predict_output]
+            
+        return predict_output, None
+    
     def compute_test_loss(self, in_training=False):
         self.net.eval()
 
@@ -269,7 +307,7 @@ class Trainer:
             start_time = time()
             for batch_index, batch_data in enumerate(self.test_dataloader):
                 src, tgt = batch_data
-                predict_output, _ = self.train_one_step(src, tgt)
+                predict_output, _ = self.test_val_one_step(src, tgt)
 
                 preds.append(predict_output.detach().numpy())
                 tgts.append(tgt.detach().numpy())

@@ -43,15 +43,15 @@ parser.add_argument("--smooth_layer_num", type=int, default=1)
 
 
 # train config
-parser.add_argument("--learning_rate", type=float, default=1e-5)
+parser.add_argument("--learning_rate", type=float, default=1e-4)
 parser.add_argument("--weight_decay", type=float, default=0.1)
 parser.add_argument("--start_epoch", type=int, default=0, help="start epoch")
 parser.add_argument("--train_epochs", type=int, default=75, help="train epochs")
 parser.add_argument("--finetune_epochs", type=int, default=50, help="finetune epochs")
-parser.add_argument("--batch_size", type=int, default=32, help="batch_size")
+parser.add_argument("--batch_size", type=int, default=16, help="batch_size")
 parser.add_argument("--patience", type=int, default=20, help="early stopping patience")
 parser.add_argument("--loss", type=str, default="mse", help="loss function")
-parser.add_argument("--dropout", type=float, default=0.1, help="dropout")
+parser.add_argument("--dropout", type=float, default=0.0, help="dropout")
 parser.add_argument("--continue_training", type=bool, default=False, help="")
 
 
