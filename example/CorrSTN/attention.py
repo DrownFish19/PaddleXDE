@@ -34,50 +34,41 @@ class VanillaAttention(nn.Layer):
 
 
 class CorrAttention(nn.Layer):
-    def __init__(self, norm_sc_matrix, attention_top_k):
+    def __init__(self, norm_sc_matrix, attention_top_k:int):
         super(CorrAttention, self).__init__()
         self.norm_sc_matrix = norm_sc_matrix
         self.k = attention_top_k
 
-        sc_top = norm_sc_matrix.topk(self.k, sorted=False)
-        sc_top_v = sc_top[0]  # [C, N, K]
-        # [C, N, 1, K]
-        sc_top_v = paddle.softmax(sc_top_v, dim=-1).unsqueeze(-1).transpose(-2, -1)
-        self.register_buffer("sc_top_v", sc_top_v)
-        self.sc_top_i = sc_top[1]  # [C, N, K]
+        vals, indx = paddle.topk(norm_sc_matrix, self.k, axis=-1)
+        self.vals = F.softmax(vals, axis=-1).unsqueeze(-2) # [N, 1, K]
+        self.indx = indx
 
     def forward(self, query, key, value, mask=None, dropout=None):
-        B, N, H, T1, D = query.size()
-        _, _, _, T2, _ = key.size()
+        B, N, H, T1, D = query.shape
+        _, _, _, T2, _ = key.shape
 
+        axis_b = paddle.arange(B)[:, None, None,None ,None, None]
+        axis_n = self.indx[None, :, :,None ,None, None]
+        axis_h = paddle.arange(H)[None, None, None,: ,None, None]
+        axis_t = paddle.arange(T2)[None, None, None,None ,:, None]
+        axis_d = paddle.arange(D)[None, None, None,None ,None, :]
+        
         # [B,N,K,H,T,D] => [B,H,T,N,K,D]
-        key_c = key[:, self.sc_top_i[0], :, :, :].permute(0, 3, 4, 1, 2, 5)
-        key_o = (
-            paddle.matmul(self.sc_top_v[0], key_c)
-            .view(B, H, T2, N, D)
-            .permute(0, 3, 1, 2, 4)
-        )
+        key_selected = (key[axis_b, axis_n, axis_h, axis_t, axis_d]
+                     .transpose([0, 3, 4, 1, 2, 5]))
+        key_new =(paddle.matmul(self.vals, key_selected)
+                  .reshape([B, H, T2, N, D])
+                  .transpose([0, 3, 1, 2, 4])
+                  )
 
-        for c in range(1, self.norm_sc_matrix.shape[0]):
-            # [B,N,K,H,T,D] => [B,H,T,N,K,D]
-            key_c = key[:, self.sc_top_i[c], :, :, :].permute(0, 3, 4, 1, 2, 5)
-            key_o += (
-                paddle.matmul(self.sc_top_v[c], key_c)
-                .view(B, H, T2, N, D)
-                .permute(0, 3, 1, 2, 4)
-            )
-
-        key = key_o / self.norm_sc_matrix.shape[0]
+        key = key_new / self.vals.shape[0]
 
         # [B,N,H,T1,T2]
         scores = paddle.matmul(query, key, transpose_y=True) / math.sqrt(D)
 
         if mask is not None:
-            # [T1,T2]
-            mask = paddle.ones(T1, T2, dtype=paddle.bool).to(query.device).triu(1)
-            mask_cluster = mask[None, :].expand(B, N, H, T1, T2)  # # [B,H,N,T1,T2]
-            scores = scores.masked_fill_(mask_cluster, -np.inf)
-        p_attn = F.softmax(scores, dim=-1)  # [B,H,N,T1,T2]
+            scores = scores + mask
+        p_attn = F.softmax(scores, axis=-1)  # [B,H,N,T1,T2]
         if dropout is not None:
             p_attn = dropout(p_attn)  # [B,H,N,T1,T2]
 
