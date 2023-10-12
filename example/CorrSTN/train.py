@@ -226,9 +226,7 @@ class Trainer:
         # )
         encoder_idx = [fix_day, fix_hour]
         encoder_input = paddle.index_select(src, paddle.concat(encoder_idx), axis=2)
-        encoder_idx = paddle.concat(encoder_idx).expand(
-            [self.training_args.batch_size, self.training_args.num_nodes, -1]
-        )
+        encoder_idx = paddle.concat(encoder_idx)
         decoder_output = self.net(src=encoder_input, src_idx=encoder_idx, tgt=tgt)
         # decoder_output = paddle.where(tgt == -1, tgt, decoder_output)
         loss = self.criterion2(decoder_output, tgt)
@@ -256,6 +254,7 @@ class Trainer:
         return eval_loss
 
     def test_val_one_step(self, src, tgt):
+        self.net.eval()
         fix_day = paddle.arange(
             start=self.training_args.his_len - 288,
             end=self.training_args.his_len - 288 + 12,
@@ -265,9 +264,7 @@ class Trainer:
         )
         encoder_idx = [fix_day, fix_hour]
         encoder_input = paddle.index_select(src, paddle.concat(encoder_idx), axis=2)
-        encoder_idx = paddle.concat(encoder_idx).expand(
-            [self.training_args.batch_size, self.training_args.num_nodes, -1]
-        )
+        encoder_idx = paddle.concat(encoder_idx)
 
         decoder_start_inputs = tgt[:, :, :1, :]
         decoder_input_list = [decoder_start_inputs]

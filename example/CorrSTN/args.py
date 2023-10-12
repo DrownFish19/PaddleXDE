@@ -27,7 +27,7 @@ parser.add_argument("--num_nodes", type=int, default=80)
 
 # model config
 parser.add_argument("--model_name", type=str, default="WindSTN", help="model name")
-parser.add_argument("--his_len", type=int, default=2016, help="history data length")
+parser.add_argument("--his_len", type=int, default=288, help="history data length")
 parser.add_argument("--tgt_len", type=int, default=12, help="tgt data length")
 parser.add_argument("--encoder_input_size", type=int, default=1)
 parser.add_argument("--decoder_input_size", type=int, default=1)
