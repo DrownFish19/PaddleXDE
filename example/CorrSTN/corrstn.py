@@ -21,9 +21,11 @@ class CorrSTN(nn.Layer):
         )
 
         self.encode_temporal_position = TemporalPositionalEmbedding(
-            training_args, max_len=2048
+            training_args, max_len=288
         )
-        self.decode_temporal_position = deepcopy(self.encode_temporal_position)
+        self.decode_temporal_position = TemporalPositionalEmbedding(
+            training_args, max_len=12
+        )
 
         self.encode_spatial_position = SpatialPositionalEmbedding(
             training_args, GCN(training_args, adj_matrix)
@@ -95,10 +97,6 @@ class CorrSTN(nn.Layer):
         return self.generator(decoder_output)
 
     def forward(self, src, src_idx, tgt):
-        src = src.reshape([-1, self.training_args.num_nodes] + src.shape[-2:])
-        src_idx = src_idx.reshape(
-            [-1, self.training_args.num_nodes] + src_idx.shape[-1:]
-        )
         encoder_output = self.encode(src, src_idx)
         output = self.decode(tgt, encoder_output)
         return output
@@ -137,27 +135,3 @@ if __name__ == "__main__":
     his_input = his[axis_bs, axis_index, axis_dim]
 
     output = model(his_input, his_index, tgt)
-
-    his_index = paddle.concat([paddle.arange(0, 12), paddle.arange(276, 288)]).expand(
-        [args.batch_size * args.num_nodes, -1]
-    )
-    np.random.seed(42)
-    encoder_input = paddle.to_tensor(np.ones([16 * 80, 24, 1]), dtype=paddle.float32)
-    decoder_input = paddle.to_tensor(np.ones([16, 80, 12, 1]), dtype=paddle.float32)
-
-    ckpt = "example/CorrSTN/ckpt/epoch_148.params"
-    import torch
-
-    torch_weight = torch.load(ckpt, map_location=torch.device("cpu"))
-    for param_tensor in torch_weight:
-        print(f"{param_tensor} \t {torch_weight[param_tensor].shape}")
-
-    paddle_weight = model.state_dict()
-    for param_tensor in paddle_weight:
-        print(f"{param_tensor} \t {paddle_weight[param_tensor].shape}")
-
-    from collections import OrderedDict
-
-    new_weight_dict = OrderedDict()
-
-    model(encoder_input, his_index, decoder_input)

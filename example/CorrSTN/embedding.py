@@ -51,9 +51,7 @@ class TemporalPositionalEmbedding(nn.Layer):
                     pos / (10000 ** ((2 * (i + 1)) / self.d_model))
                 )
 
-        pe = pe.expand(
-            [args.batch_size, args.num_nodes, max_len, self.d_model]
-        )  # [1,1,max_len,D]
+        pe = pe.expand([1, 1, max_len, self.d_model])  # [1,1,max_len,D]
         # register_buffer:
         # Adds a persistent buffer to the module.
         # This is typically used to register a buffer that should not to be considered a model parameter.
@@ -75,12 +73,8 @@ class TemporalPositionalEmbedding(nn.Layer):
             # [B,N,T,D] + [1,1,T,D]
             x = x + paddle.index_select(self.pe, lookup_index, axis=-2)
         else:
-            axis_b = paddle.arange(self.args.batch_size)[:, None, None, None]
-            axis_n = paddle.arange(self.args.num_nodes)[None, :, None, None]
-            axis_index = lookup_index[:, :, :, None]
-            axis_dim = paddle.arange(self.args.d_model)[None, None, None, :]
 
-            x = x + self.pe[axis_b, axis_n, axis_index, axis_dim]
+            x = x + paddle.index_select(self.pe, lookup_index, axis=-2)
 
         return self.dropout(x)
 
