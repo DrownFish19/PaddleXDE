@@ -20,6 +20,7 @@ from utils import (
 
 # paddle.seed(2357)
 
+
 class Trainer:
     def __init__(self, training_args):
 
@@ -100,9 +101,7 @@ class Trainer:
             # params_filename = os.path.join(
             #     self.save_path, f"epoch_{self.start_epoch}.params"
             # )
-            params_filename = os.path.join(
-                self.save_path, f"epoch_best.params"
-            )
+            params_filename = os.path.join(self.save_path, "epoch_best.params")
             self.net.load_state_dict(paddle.load(params_filename))
             self.logger.info(f"load weight from: {params_filename}")
 
@@ -202,7 +201,7 @@ class Trainer:
     def _init_finetune(self):
         self.logger.info("Start FineTune Training")
         # params_filename = os.path.join(self.save_path, f"epoch_{best_epoch}.params")
-        params_filename = os.path.join(self.save_path, f"epoch_best.params")
+        params_filename = os.path.join(self.save_path, "epoch_best.params")
         # self.net.set_state_dict(paddle.load(params_filename))
         self.logger.info(f"load weight from: {params_filename}")
 
@@ -255,7 +254,7 @@ class Trainer:
             self.logger.info(f"eval cost time: {time() - start_time}s")
             self.logger.info(f"eval_loss: {eval_loss.numpy()}")
         return eval_loss
-    
+
     def test_val_one_step(self, src, tgt):
         fix_day = paddle.arange(
             start=self.training_args.his_len - 288,
@@ -269,19 +268,19 @@ class Trainer:
         encoder_idx = paddle.concat(encoder_idx).expand(
             [self.training_args.batch_size, self.training_args.num_nodes, -1]
         )
-        
+
         decoder_start_inputs = tgt[:, :, :1, :]
         decoder_input_list = [decoder_start_inputs]
-        
+
         encoder_output = self.net.encode(encoder_input, encoder_idx)
 
         for step in range(self.training_args.tgt_len):
             decoder_inputs = paddle.concat(decoder_input_list, axis=2)
             predict_output = self.net.decode(decoder_inputs, encoder_output)
             decoder_input_list = [decoder_start_inputs, predict_output]
-            
+
         return predict_output, None
-    
+
     def compute_test_loss(self, in_training=False):
         self.net.eval()
 

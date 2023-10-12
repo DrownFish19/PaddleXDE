@@ -1,6 +1,5 @@
 import math
 
-import numpy as np
 import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
@@ -34,34 +33,31 @@ class VanillaAttention(nn.Layer):
 
 
 class CorrAttention(nn.Layer):
-    def __init__(self, norm_sc_matrix, attention_top_k:int):
+    def __init__(self, norm_sc_matrix, attention_top_k: int):
         super(CorrAttention, self).__init__()
         self.norm_sc_matrix = norm_sc_matrix
         self.k = attention_top_k
 
         vals, indx = paddle.topk(norm_sc_matrix, self.k, axis=-1)
-        self.vals = F.softmax(vals, axis=-1).unsqueeze(-2) # [N, 1, K]
+        self.vals = F.softmax(vals, axis=-1).unsqueeze(-2)  # [N, 1, K]
         self.indx = indx
 
     def forward(self, query, key, value, mask=None, dropout=None):
         B, N, H, T1, D = query.shape
-        _, _, _, T2, _ = key.shape
 
-        axis_b = paddle.arange(B)[:, None, None,None ,None, None]
-        axis_n = self.indx[None, :, :,None ,None, None]
-        axis_h = paddle.arange(H)[None, None, None,: ,None, None]
-        axis_t = paddle.arange(T2)[None, None, None,None ,:, None]
-        axis_d = paddle.arange(D)[None, None, None,None ,None, :]
-        
-        # [B,N,K,H,T,D] => [B,H,T,N,K,D]
-        key_selected = (key[axis_b, axis_n, axis_h, axis_t, axis_d]
-                     .transpose([0, 3, 4, 1, 2, 5]))
-        key_new =(paddle.matmul(self.vals, key_selected)
-                  .reshape([B, H, T2, N, D])
-                  .transpose([0, 3, 1, 2, 4])
-                  )
-
-        key = key_new / self.vals.shape[0]
+        key = key.transpose([0, 2, 3, 1, 4])  # [B, H, T, N, D]
+        # [B, H, T, N, D]
+        key = paddle.concat(
+            [
+                paddle.matmul(
+                    self.vals[i], paddle.index_select(key, index=self.indx[i], axis=-2)
+                )
+                for i in range(N)
+            ],
+            axis=-2,
+        )
+        key = key.transpose([0, 3, 1, 2, 4])
+        key = key / math.sqrt(N)
 
         # [B,N,H,T1,T2]
         scores = paddle.matmul(query, key, transpose_y=True) / math.sqrt(D)
