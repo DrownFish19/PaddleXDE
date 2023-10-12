@@ -77,7 +77,7 @@ class CorrSTN(nn.Layer):
         self.decoder = Decoder(decoderLayer, training_args.decoder_num_layers)
 
         self.generator = nn.Linear(
-            training_args.d_model, training_args.decoder_output_size, bias_attr=False
+            training_args.d_model, training_args.decoder_output_size
         )
 
     def encode(self, src, lookup_index):
@@ -88,7 +88,7 @@ class CorrSTN(nn.Layer):
         return encoder_output
 
     def decode(self, tgt, encoder_output):
-        tgt_dense = self.encoder_dense(tgt)
+        tgt_dense = self.decoder_dense(tgt)
         tgt_tp_embedding = self.decode_temporal_position(tgt_dense)
         tgt_sp_embedding = self.decode_spatial_position(tgt_tp_embedding)
         decoder_output = self.decoder(x=tgt_sp_embedding, memory=encoder_output)
@@ -138,4 +138,26 @@ if __name__ == "__main__":
 
     output = model(his_input, his_index, tgt)
 
-    print(output)
+    his_index = paddle.concat([paddle.arange(0, 12), paddle.arange(276, 288)]).expand(
+        [args.batch_size * args.num_nodes, -1]
+    )
+    np.random.seed(42)
+    encoder_input = paddle.to_tensor(np.ones([16 * 80, 24, 1]), dtype=paddle.float32)
+    decoder_input = paddle.to_tensor(np.ones([16, 80, 12, 1]), dtype=paddle.float32)
+
+    ckpt = "example/CorrSTN/ckpt/epoch_148.params"
+    import torch
+
+    torch_weight = torch.load(ckpt, map_location=torch.device("cpu"))
+    for param_tensor in torch_weight:
+        print(f"{param_tensor} \t {torch_weight[param_tensor].shape}")
+
+    paddle_weight = model.state_dict()
+    for param_tensor in paddle_weight:
+        print(f"{param_tensor} \t {paddle_weight[param_tensor].shape}")
+
+    from collections import OrderedDict
+
+    new_weight_dict = OrderedDict()
+
+    model(encoder_input, his_index, decoder_input)
