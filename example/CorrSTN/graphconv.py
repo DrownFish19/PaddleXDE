@@ -12,6 +12,10 @@ class GCN(nn.Layer):
         self.Theta = nn.Linear(
             training_args.d_model, training_args.d_model, bias_attr=False
         )
+        self.alpha = paddle.create_parameter(
+            shape=[1], dtype=paddle.get_default_dtype()
+        )
+        self.beta = paddle.create_parameter(shape=[1], dtype=paddle.get_default_dtype())
 
     def forward(self, x):
         """
@@ -19,9 +23,9 @@ class GCN(nn.Layer):
         :param x: (batch_size, N, F_in)
         :return: (batch_size, N, F_out)
         """
-        return F.relu(
-            self.Theta(paddle.matmul(self.norm_adj_matrix, x))
-        )  # [N,N][B,N,in]->[B,N,in]->[B,N,out]
+        x_gcn = self.alpha * paddle.matmul(self.norm_adj_matrix, x)
+        # [N,N][B,N,in]->[B,N,in]->[B,N,out]
+        return F.relu(self.Theta(x_gcn))
 
 
 class SpatialAttentionLayer(nn.Layer):
@@ -47,13 +51,17 @@ class SpatialAttentionLayer(nn.Layer):
 
 
 class SpatialAttentionGCN(nn.Layer):
-    def __init__(self, args, adj_matrix, is_scale=False):
+    def __init__(self, args, adj_matrix, is_scale=True):
         super(SpatialAttentionGCN, self).__init__()
         self.register_buffer("norm_adj", adj_matrix)
         self.args = args
         self.linear = nn.Linear(args.d_model, args.d_model, bias_attr=False)
         self.is_scale = is_scale
         self.SAt = SpatialAttentionLayer(dropout=args.dropout)
+        self.alpha = paddle.create_parameter(
+            shape=[1], dtype=paddle.get_default_dtype()
+        )
+        self.beta = paddle.create_parameter(shape=[1], dtype=paddle.get_default_dtype())
 
     def forward(self, x):
         """
@@ -66,7 +74,9 @@ class SpatialAttentionGCN(nn.Layer):
         if self.is_scale:
             spatial_attention = spatial_attention / math.sqrt(self.args.d_model)
         x = x.transpose([0, 2, 1, 3])  # [B,T,N,D]
-        x = paddle.matmul(paddle.multiply(spatial_attention, self.norm_adj), x)
+        x = self.alpha * paddle.matmul(
+            paddle.multiply(spatial_attention, self.norm_adj), x
+        )
 
         # [B, N, T, D]
         return F.relu(self.linear(x).transpose([0, 2, 1, 3]))
