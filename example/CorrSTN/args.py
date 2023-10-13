@@ -18,7 +18,7 @@ parser.add_argument(
 parser.add_argument(
     "--adj_path",
     type=str,
-    default="example/CorrSTN/TrafficFlowData/HZME_OUTFLOW/SCORR_HZME_OUTFLOW_0.6_C16.npy",
+    default="example/CorrSTN/TrafficFlowData/HZME_OUTFLOW/SCORR_HZME_OUTFLOW.npy",
 )
 parser.add_argument("--split", type=str, default="6:2:2", help="data split")
 parser.add_argument("--scale", type=bool, default=True, help="data norm scale")
@@ -27,18 +27,18 @@ parser.add_argument("--num_nodes", type=int, default=80)
 
 # model config
 parser.add_argument("--model_name", type=str, default="WindSTN", help="model name")
-parser.add_argument("--his_len", type=int, default=288, help="history data length")
+parser.add_argument("--his_len", type=int, default=12, help="history data length")
 parser.add_argument("--tgt_len", type=int, default=12, help="tgt data length")
 parser.add_argument("--encoder_input_size", type=int, default=1)
 parser.add_argument("--decoder_input_size", type=int, default=1)
 parser.add_argument("--decoder_output_size", type=int, default=1)
-parser.add_argument("--encoder_num_layers", type=int, default=4)
-parser.add_argument("--decoder_num_layers", type=int, default=4)
+parser.add_argument("--encoder_num_layers", type=int, default=3)
+parser.add_argument("--decoder_num_layers", type=int, default=3)
 parser.add_argument("--d_model", type=int, default=64)
 parser.add_argument("--attention", type=str, default="Corr", help="Corr,Vanilla")
-parser.add_argument("--head", type=int, default=8, help="head")
-parser.add_argument("--kernel_size", type=int, default=3, help="kernel_size")
-parser.add_argument("--top_k", type=int, default=10, help="top_k")
+parser.add_argument("--head", type=int, default=4, help="head")
+parser.add_argument("--kernel_size", type=int, default=5, help="kernel_size")
+parser.add_argument("--top_k", type=int, default=5, help="top_k")
 parser.add_argument("--smooth_layer_num", type=int, default=1)
 
 

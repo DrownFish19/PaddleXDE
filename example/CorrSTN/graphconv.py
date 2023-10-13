@@ -6,9 +6,10 @@ import paddle.nn.functional as F
 
 
 class GCN(nn.Layer):
-    def __init__(self, training_args, norm_adj_matrix):
+    def __init__(self, training_args, norm_adj_matrix, norm_sc_matrix):
         super(GCN, self).__init__()
         self.register_buffer("norm_adj_matrix", norm_adj_matrix)
+        self.register_buffer("norm_sc_matrix", norm_sc_matrix)
         self.Theta = nn.Linear(
             training_args.d_model, training_args.d_model, bias_attr=False
         )
@@ -24,6 +25,7 @@ class GCN(nn.Layer):
         :return: (batch_size, N, F_out)
         """
         x_gcn = self.alpha * paddle.matmul(self.norm_adj_matrix, x)
+        x_gcn += self.beta * paddle.matmul(self.norm_sc_matrix, x)
         # [N,N][B,N,in]->[B,N,in]->[B,N,out]
         return F.relu(self.Theta(x_gcn))
 
@@ -51,9 +53,10 @@ class SpatialAttentionLayer(nn.Layer):
 
 
 class SpatialAttentionGCN(nn.Layer):
-    def __init__(self, args, adj_matrix, is_scale=True):
+    def __init__(self, args, adj_matrix, sc_matrix, is_scale=True):
         super(SpatialAttentionGCN, self).__init__()
         self.register_buffer("norm_adj", adj_matrix)
+        self.register_buffer("norm_sc", sc_matrix)
         self.args = args
         self.linear = nn.Linear(args.d_model, args.d_model, bias_attr=False)
         self.is_scale = is_scale
@@ -74,9 +77,11 @@ class SpatialAttentionGCN(nn.Layer):
         if self.is_scale:
             spatial_attention = spatial_attention / math.sqrt(self.args.d_model)
         x = x.transpose([0, 2, 1, 3])  # [B,T,N,D]
-        x = self.alpha * paddle.matmul(
+        x_gcn = self.alpha * paddle.matmul(
             paddle.multiply(spatial_attention, self.norm_adj), x
         )
-
+        x_gcn += self.beta * paddle.matmul(
+            paddle.multiply(spatial_attention, self.norm_sc), x
+        )
         # [B, N, T, D]
-        return F.relu(self.linear(x).transpose([0, 2, 1, 3]))
+        return F.relu(self.linear(x_gcn).transpose([0, 2, 1, 3]))

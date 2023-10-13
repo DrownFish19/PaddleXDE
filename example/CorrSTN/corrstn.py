@@ -8,7 +8,7 @@ from graphconv import GCN, SpatialAttentionGCN
 
 
 class CorrSTN(nn.Layer):
-    def __init__(self, training_args, adj_matrix):
+    def __init__(self, training_args, adj_matrix, sc_matrix):
         super(CorrSTN, self).__init__()
 
         self.training_args = training_args
@@ -28,25 +28,25 @@ class CorrSTN(nn.Layer):
         )
 
         self.encode_spatial_position = SpatialPositionalEmbedding(
-            training_args, GCN(training_args, adj_matrix)
+            training_args, GCN(training_args, adj_matrix, sc_matrix)
         )
         self.decode_spatial_position = deepcopy(self.encode_spatial_position)
 
         attn_ss = MultiHeadAttentionAwareTemporalContext(
             args=training_args,
-            adj_matrix=adj_matrix,
+            adj_matrix=sc_matrix,
             query_conv_type="1DConv",
             key_conv_type="1DConv",
         )
         attn_st = MultiHeadAttentionAwareTemporalContext(
             args=training_args,
-            adj_matrix=adj_matrix,
+            adj_matrix=sc_matrix,
             query_conv_type="causal",
             key_conv_type="1DConv",
         )
         attn_tt = MultiHeadAttentionAwareTemporalContext(
             args=training_args,
-            adj_matrix=adj_matrix,
+            adj_matrix=sc_matrix,
             query_conv_type="causal",
             key_conv_type="causal",
         )
@@ -54,6 +54,7 @@ class CorrSTN(nn.Layer):
         spatial_attention_gcn = SpatialAttentionGCN(
             args=training_args,
             adj_matrix=adj_matrix,
+            sc_matrix=sc_matrix,
             is_scale=True,
         )
 
@@ -107,15 +108,22 @@ if __name__ == "__main__":
     import paddle
     import paddle.nn as nn
     from args import args
-    from utils import norm_adj_matrix
+    from utils import get_adjacency_matrix_2direction, norm_adj_matrix
+
+    adj_matrix, distance_mx = get_adjacency_matrix_2direction(
+        "example/CorrSTN/TrafficFlowData/HZME_OUTFLOW/HZME_OUTFLOW.csv", 80
+    )
+    adj_matrix = paddle.to_tensor(
+        norm_adj_matrix(adj_matrix), paddle.get_default_dtype()
+    )
 
     corr = np.load(args.adj_path)[0]
-    adj_matrix = paddle.to_tensor(norm_adj_matrix(corr), paddle.get_default_dtype())
+    sc_matrix = paddle.to_tensor(norm_adj_matrix(corr), paddle.get_default_dtype())
 
     nn.initializer.set_global_initializer(
         nn.initializer.XavierUniform(), nn.initializer.XavierUniform()
     )
-    model = CorrSTN(args, adj_matrix)
+    model = CorrSTN(args, adj_matrix, sc_matrix)
 
     from dataset import TrafficFlowDataset
     from paddle.io import DataLoader

@@ -76,7 +76,7 @@ class TemporalPositionalEmbedding(nn.Layer):
 
             x = x + paddle.index_select(self.pe, lookup_index, axis=-2)
 
-        return self.dropout(x)
+        return self.dropout(x.detach())
 
 
 class TimeEmbedding:

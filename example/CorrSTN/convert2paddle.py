@@ -6,7 +6,7 @@ import paddle.nn as nn
 import torch
 from args import args
 from corrstn import CorrSTN
-from utils import norm_adj_matrix
+from utils import get_adjacency_matrix_2direction, norm_adj_matrix
 
 encoder_layer_num = 4
 decoder_layer_num = 4
@@ -77,21 +77,25 @@ for i in range(decoder_layer_num):
 for key in mapping_dict:
     print(key, mapping_dict[key])
 
+adj_matrix, distance_mx = get_adjacency_matrix_2direction(
+    "example/CorrSTN/TrafficFlowData/HZME_OUTFLOW/HZME_OUTFLOW.csv", 80
+)
+adj_matrix = paddle.to_tensor(norm_adj_matrix(adj_matrix), paddle.get_default_dtype())
+
 corr = np.load(args.adj_path)[0]
-adj_matrix = paddle.to_tensor(norm_adj_matrix(corr), paddle.get_default_dtype())
+sc_matrix = paddle.to_tensor(norm_adj_matrix(corr), paddle.get_default_dtype())
 
 nn.initializer.set_global_initializer(
     nn.initializer.XavierUniform(), nn.initializer.XavierUniform()
 )
-model = CorrSTN(args, adj_matrix)
+model = CorrSTN(args, adj_matrix, sc_matrix)
 
-
-his_index = paddle.concat([paddle.arange(0, 12), paddle.arange(276, 288)])
+his_index = paddle.concat([paddle.arange(0, 12)])
 np.random.seed(42)
-encoder_input = paddle.to_tensor(np.ones([16, 80, 24, 1]), dtype=paddle.float32)
-decoder_input = paddle.to_tensor(np.ones([16, 80, 12, 1]), dtype=paddle.float32)
+encoder_input = paddle.to_tensor(np.ones([1, 80, 12, 1]), dtype=paddle.float32)
+decoder_input = paddle.to_tensor(np.ones([1, 80, 12, 1]), dtype=paddle.float32)
 
-ckpt = "example/CorrSTN/ckpt/epoch_143.params"
+ckpt = "example/CorrSTN/ckpt/epoch_387.params"
 
 torch_weight = torch.load(ckpt, map_location=torch.device("cpu"))
 for param_tensor in torch_weight:
@@ -113,4 +117,5 @@ for torch_key in torch_weight:
         new_weight_dict[paddle_key] = torch_w
 
 model.load_dict(new_weight_dict)
-model(encoder_input, his_index, decoder_input)
+paddle.save(model.state_dict(), "model.pdparams")
+print(model(encoder_input, his_index, decoder_input))

@@ -57,7 +57,7 @@ class CorrAttention(nn.Layer):
             axis=-2,
         )
         key = key.transpose([0, 3, 1, 2, 4])
-        key = key / math.sqrt(N)
+        key = key  # / math.sqrt(N)
 
         # [B,N,H,T1,T2]
         scores = paddle.matmul(query, key, transpose_y=True) / math.sqrt(D)
