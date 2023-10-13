@@ -108,38 +108,24 @@ if __name__ == "__main__":
     import paddle
     import paddle.nn as nn
     from args import args
-    from utils import get_adjacency_matrix_2direction, norm_adj_matrix
-
-    adj_matrix, distance_mx = get_adjacency_matrix_2direction(
-        "example/CorrSTN/TrafficFlowData/HZME_OUTFLOW/HZME_OUTFLOW.csv", 80
-    )
-    adj_matrix = paddle.to_tensor(
-        norm_adj_matrix(adj_matrix), paddle.get_default_dtype()
-    )
-
-    corr = np.load(args.adj_path)[0]
-    sc_matrix = paddle.to_tensor(norm_adj_matrix(corr), paddle.get_default_dtype())
-
-    nn.initializer.set_global_initializer(
-        nn.initializer.XavierUniform(), nn.initializer.XavierUniform()
-    )
-    model = CorrSTN(args, adj_matrix, sc_matrix)
-
     from dataset import TrafficFlowDataset
     from paddle.io import DataLoader
+    from paddle.nn.initializer import XavierUniform
+    from utils import get_adjacency_matrix_2direction, norm_adj_matrix
+
+    default_dtype = paddle.get_default_dtype()
+    adj_matrix, _ = get_adjacency_matrix_2direction(args.adj_path, 80)
+    adj_matrix = paddle.to_tensor(norm_adj_matrix(adj_matrix), default_dtype)
+
+    sc_matrix = np.load(args.sc_path)[0, :, :]
+    sc_matrix = paddle.to_tensor(norm_adj_matrix(sc_matrix), default_dtype)
+
+    nn.initializer.set_global_initializer(XavierUniform(), XavierUniform())
+    model = CorrSTN(args, adj_matrix, sc_matrix)
 
     train_dataset = TrafficFlowDataset(args, "train")
-    train_dataloader = DataLoader(
-        train_dataset, batch_size=args.batch_size, shuffle=False
-    )
+    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size)
     his, tgt = next(iter(train_dataloader))
-    his_index = paddle.randint(
-        shape=[args.batch_size * args.num_nodes, 36], high=his.shape[-2], low=0
-    )
-    axis_bs = paddle.arange(args.batch_size * args.num_nodes)[:, None, None]
-    axis_index = his_index[:, :, None]
-    axis_dim = paddle.arange(1)[None, None, :]
-    his = his.reshape([-1] + his.shape[-2:])
-    his_input = his[axis_bs, axis_index, axis_dim]
-
+    his_index = paddle.randint(shape=[36], high=his.shape[-2], low=0)
+    his_input = paddle.index_select(his, his_index, axis=-2)
     output = model(his_input, his_index, tgt)

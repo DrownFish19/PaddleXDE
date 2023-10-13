@@ -5,7 +5,6 @@ import os
 from math import sqrt
 
 import numpy as np
-import paddle
 import paddle.nn as nn
 import pandas as pd
 from paddle.optimizer.lr import LRScheduler
@@ -160,7 +159,7 @@ def norm_adj_matrix(W):
 def multichannel_norm_adj(A):
     norm_adj_list = []
     for c in range(A.shape[0]):
-        norm_adj_list.append(normed(A[c]))
+        norm_adj_list.append(norm_adj_matrix(A[c]))
 
     output = np.stack(norm_adj_list)
     return output

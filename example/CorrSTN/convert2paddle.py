@@ -2,7 +2,6 @@ from collections import OrderedDict
 
 import numpy as np
 import paddle
-import paddle.nn as nn
 import torch
 from args import args
 from corrstn import CorrSTN
@@ -77,26 +76,16 @@ for i in range(decoder_layer_num):
 for key in mapping_dict:
     print(key, mapping_dict[key])
 
-adj_matrix, distance_mx = get_adjacency_matrix_2direction(
-    "example/CorrSTN/TrafficFlowData/HZME_OUTFLOW/HZME_OUTFLOW.csv", 80
-)
-adj_matrix = paddle.to_tensor(norm_adj_matrix(adj_matrix), paddle.get_default_dtype())
 
-corr = np.load(args.adj_path)[0]
-sc_matrix = paddle.to_tensor(norm_adj_matrix(corr), paddle.get_default_dtype())
+default_dtype = paddle.get_default_dtype()
+adj_matrix, _ = get_adjacency_matrix_2direction(args.adj_path, 80)
+adj_matrix = paddle.to_tensor(norm_adj_matrix(adj_matrix), default_dtype)
+sc_matrix = np.load(args.sc_path)[0, :, :]
+sc_matrix = paddle.to_tensor(norm_adj_matrix(sc_matrix), default_dtype)
 
-nn.initializer.set_global_initializer(
-    nn.initializer.XavierUniform(), nn.initializer.XavierUniform()
-)
 model = CorrSTN(args, adj_matrix, sc_matrix)
 
-his_index = paddle.concat([paddle.arange(0, 12)])
-np.random.seed(42)
-encoder_input = paddle.to_tensor(np.ones([1, 80, 12, 1]), dtype=paddle.float32)
-decoder_input = paddle.to_tensor(np.ones([1, 80, 12, 1]), dtype=paddle.float32)
-
 ckpt = "example/CorrSTN/ckpt/epoch_387.params"
-
 torch_weight = torch.load(ckpt, map_location=torch.device("cpu"))
 for param_tensor in torch_weight:
     print(f"{param_tensor} \t {torch_weight[param_tensor].shape}")
@@ -117,5 +106,28 @@ for torch_key in torch_weight:
         new_weight_dict[paddle_key] = torch_w
 
 model.load_dict(new_weight_dict)
-paddle.save(model.state_dict(), "model.pdparams")
-print(model(encoder_input, his_index, decoder_input))
+
+his_index = paddle.concat([paddle.arange(0, 12)])
+encoder_input = paddle.to_tensor(np.ones([1, 80, 12, 1]), dtype=paddle.float32)
+decoder_input = paddle.to_tensor(np.ones([1, 80, 12, 1]), dtype=paddle.float32)
+print(model(encoder_input, his_index, decoder_input)[0, 0, :, :])
+
+# for convert model with [week, day, hour] input, the conv of corrstn in paddle is
+# different from conv of corrstn in torch, which list as follows:
+# paddle: conv(concat([week, day, hour]))
+# torch: concat([conv(week), conv(day), conv(hour)])
+#
+# for convert model with [hour]
+# if output is close follows, the convert is ok.
+# [0.29537824]
+# [0.35994622]
+# [0.40714896]
+# [0.4344998 ]
+# [0.37601328]
+# [0.37747186]
+# [0.37033072]
+# [0.37977317]
+# [0.40246618]
+# [0.38128358]
+# [0.33716473]
+# [0.34575891]

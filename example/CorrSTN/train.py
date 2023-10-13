@@ -1,3 +1,4 @@
+import contextlib
 import os
 from time import time
 
@@ -9,16 +10,23 @@ from args import args
 from corrstn import CorrSTN
 from dataset import TrafficFlowDataset
 from paddle.io import DataLoader
+from paddle.nn.initializer import XavierUniform
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from utils import (
     CosineAnnealingWithWarmupDecay,
     EarlyStopping,
     Logger,
+    get_adjacency_matrix_2direction,
     masked_mape_np,
     norm_adj_matrix,
 )
 
-# paddle.seed(2357)
+
+def amp_guard_context(fp16=False):
+    if fp16:
+        return paddle.amp.auto_cast(level="O2")
+    else:
+        return contextlib.nullcontext()
 
 
 class Trainer:
@@ -51,15 +59,12 @@ class Trainer:
         self.logger.info(f"save path  : {self.save_path}")
         self.logger.info(f"log  file  : {self.logger.log_file}")
 
+        self.finetune = False
         self.early_stopping = EarlyStopping(patience=training_args.patience, delta=0.0)
 
-        self._init_train()
         self._build_data()
         self._build_model()
         self._build_optim()
-
-    def _init_train(self):
-        pass
 
     def _build_data(self):
         self.train_dataset = TrafficFlowDataset(self.training_args, "train")
@@ -85,25 +90,53 @@ class Trainer:
             drop_last=True,
         )
 
+        self.encoder_idx = []
+        if self.training_args.his_len >= 2016:
+            self.fix_week = paddle.arange(
+                start=self.training_args.his_len - 2016,
+                end=self.training_args.his_len - 2016 + 12,
+            )
+            self.encoder_idx.append(self.fix_week)
+        if self.training_args.his_len >= 288:
+            self.fix_day = paddle.arange(
+                start=self.training_args.his_len - 288,
+                end=self.training_args.his_len - 288 + 12,
+            )
+            self.encoder_idx.append(self.fix_day)
+        if self.training_args.his_len >= 12:
+            self.fix_hour = paddle.arange(
+                start=self.training_args.his_len - 12,
+                end=self.training_args.his_len,
+            )
+            self.encoder_idx.append(self.fix_hour)
+        self.encoder_idx = paddle.concat(self.encoder_idx)
+
     def _build_model(self):
-        adj_mx = np.load(os.path.join(self.training_args.adj_path))[0, :, :]
-        self.norm_adj_matrix = paddle.to_tensor(
-            norm_adj_matrix(adj_mx), dtype=paddle.get_default_dtype()
+        default_dtype = paddle.get_default_dtype()
+        adj_matrix, _ = get_adjacency_matrix_2direction(self.training_args.adj_path, 80)
+        adj_matrix = paddle.to_tensor(norm_adj_matrix(adj_matrix), default_dtype)
+
+        sc_matrix = np.load(self.training_args.sc_path)[0, :, :]
+        sc_matrix = paddle.to_tensor(norm_adj_matrix(sc_matrix), default_dtype)
+
+        nn.initializer.set_global_initializer(XavierUniform(), XavierUniform())
+
+        self.net = CorrSTN(
+            self.training_args,
+            adj_matrix=adj_matrix,
+            sc_matrix=sc_matrix,
         )
-
-        nn.initializer.set_global_initializer(
-            nn.initializer.XavierUniform(), nn.initializer.XavierUniform()
-        )
-
-        self.net = CorrSTN(self.training_args, adj_matrix=self.norm_adj_matrix)
-
         if self.training_args.continue_training:
             # params_filename = os.path.join(
             #     self.save_path, f"epoch_{self.start_epoch}.params"
             # )
             params_filename = os.path.join(self.save_path, "epoch_best.params")
-            self.net.load_state_dict(paddle.load(params_filename))
+            self.net.set_state_dict(paddle.load(params_filename))
             self.logger.info(f"load weight from: {params_filename}")
+
+        if self.training_args.fp16:
+            self.net = paddle.amp.decorate(models=self.net, level="O2")
+            self.scaler = paddle.amp.GradScaler(init_loss_scaling=1024)
 
         self.logger.info(self.net)
 
@@ -128,10 +161,11 @@ class Trainer:
         )
 
         # 定义优化器，传入所有网络参数
-        self.optimizer = optim.Adam(
+        self.optimizer = optim.AdamW(
             parameters=self.net.parameters(),
             learning_rate=self.lr_scheduler,
             weight_decay=self.training_args.weight_decay,
+            multi_precision=True,
         )
 
         self.logger.info("Optimizer's state_dict:")
@@ -174,18 +208,21 @@ class Trainer:
                 best_eval_loss = eval_loss
                 best_epoch = epoch
                 self.logger.info(f"best_epoch: {best_epoch}")
-                self.logger.info(f"eval_loss: {eval_loss.numpy()}")
+                self.logger.info(f"eval_loss: {eval_loss}")
                 self.compute_test_loss()
                 # save parameters
                 # params_filename = os.path.join(self.save_path, f"epoch_{epoch}.params")
-                # params_filename = os.path.join(self.save_path, f"epoch_best.params")
-                # paddle.save(self.net.state_dict(), params_filename)
-                # self.logger.info(f"save parameters to file: {params_filename}")
+                params_filename = os.path.join(self.save_path, "epoch_best.params")
+                paddle.save(self.net.state_dict(), params_filename)
+                self.logger.info(f"save parameters to file: {params_filename}")
 
             self.early_stopping(val_loss=eval_loss)
             if self.early_stopping.early_stop:
                 self.logger.info("Early stopping")
-                break
+                if epoch < self.training_args.train_epochs:
+                    epoch = self.training_args.train_epochs
+                else:
+                    break
             else:
                 epoch += 1
 
@@ -193,16 +230,16 @@ class Trainer:
         self.logger.info("apply the best val model on the test dataset ...")
 
         # params_filename = os.path.join(self.save_path, f"epoch_{best_epoch}.params")
-        # params_filename = os.path.join(self.save_path, f"epoch_best.params")
-        # self.logger.info(f"load weight from: {params_filename}")
-        # self.net.set_state_dict(paddle.load(params_filename))
+        params_filename = os.path.join(self.save_path, "epoch_best.params")
+        self.logger.info(f"load weight from: {params_filename}")
+        self.net.set_state_dict(paddle.load(params_filename))
         self.compute_test_loss()
 
     def _init_finetune(self):
         self.logger.info("Start FineTune Training")
         # params_filename = os.path.join(self.save_path, f"epoch_{best_epoch}.params")
         params_filename = os.path.join(self.save_path, "epoch_best.params")
-        # self.net.set_state_dict(paddle.load(params_filename))
+        self.net.set_state_dict(paddle.load(params_filename))
         self.logger.info(f"load weight from: {params_filename}")
 
         self.early_stopping.reset()
@@ -210,84 +247,109 @@ class Trainer:
         self.optimizer._learning_rate.max_lr = self.training_args.learning_rate * 0.1
         self.optimizer._learning_rate.min_lr = self.training_args.learning_rate * 0.01
 
-    def train_one_step(self, src, tgt):
-        # fix his_index for his_len = 2016
-        # fix_week = paddle.arange(start=0, end=self.training_args.tgt_len)
-        fix_day = paddle.arange(
-            start=self.training_args.his_len - 288,
-            end=self.training_args.his_len - 288 + 12,
-        )
-        fix_hour = paddle.arange(
-            start=self.training_args.his_len - 12, end=self.training_args.his_len
-        )
-        # tgt_idx = paddle.arange(
-        #     start=self.training_args.his_len,
-        #     end=self.training_args.his_len + self.training_args.tgt_len,
-        # )
-        encoder_idx = [fix_day, fix_hour]
-        encoder_input = paddle.index_select(src, paddle.concat(encoder_idx), axis=2)
-        encoder_idx = paddle.concat(encoder_idx)
-        decoder_output = self.net(src=encoder_input, src_idx=encoder_idx, tgt=tgt)
-        # decoder_output = paddle.where(tgt == -1, tgt, decoder_output)
-        loss = self.criterion2(decoder_output, tgt)
+        self.finetune = True
 
+    def train_one_step(self, src, tgt):
+        """_summary_
+
+        Args:
+            src (_type_): [B,N,T,D]
+            tgt (_type_): [B,N,T,D]
+
+        Returns:
+            _type_: _description_
+        """
+        self.net.train()
+        encoder_input = paddle.index_select(src, self.encoder_idx, axis=2)
+
+        with amp_guard_context(self.training_args.fp16):
+            if not self.finetune:
+                decoder_output = self.net(
+                    src=encoder_input, src_idx=self.encoder_idx, tgt=tgt
+                )
+            else:
+                decoder_start_inputs = encoder_input[:, :, -1:, :]
+                decoder_input_list = [decoder_start_inputs]
+                encoder_output = self.net.encode(encoder_input, self.encoder_idx)
+
+                for step in range(self.training_args.tgt_len):
+                    decoder_inputs = paddle.concat(decoder_input_list, axis=2)
+                    decoder_output = self.net.decode(decoder_inputs, encoder_output)
+                    decoder_input_list = [decoder_start_inputs, decoder_output]
+
+            # decoder_output = paddle.where(tgt == -1, tgt, decoder_output)
+            loss = self.criterion1(decoder_output, tgt)
         if self.net.training:
-            loss.backward()
-            self.optimizer.step()
-            self.optimizer.clear_grad()
+            if self.training_args.fp16:
+                scaled = self.scaler.scale(loss)  # loss 缩放，乘以系数 loss_scaling
+                scaled.backward()  # 反向传播
+                self.scaler.step(self.optimizer)  # 更新参数（参数梯度先除系数 loss_scaling 再更新参数）
+                self.scaler.update()  # 基于动态 loss_scaling 策略更新 loss_scaling 系数
+                self.optimizer.clear_grad(set_to_zero=False)
+            else:
+                loss.backward()
+                self.optimizer.step()
+                self.optimizer.clear_grad()
+        return decoder_output, loss
+
+    def eval_one_step(self, src, tgt):
+        self.net.eval()
+        encoder_input = paddle.index_select(src, self.encoder_idx, axis=2)
+        with amp_guard_context(self.training_args.fp16):
+            decoder_start_inputs = encoder_input[:, :, :1, :]
+            decoder_input_list = [decoder_start_inputs]
+
+            encoder_output = self.net.encode(encoder_input, self.encoder_idx)
+
+            for step in range(self.training_args.tgt_len):
+                decoder_inputs = paddle.concat(decoder_input_list, axis=2)
+                decoder_output = self.net.decode(decoder_inputs, encoder_output)
+                decoder_input_list = [decoder_start_inputs, decoder_output]
+
+            loss = self.criterion1(decoder_output, tgt)
+
+        return decoder_output, loss
+
+    def test_one_step(self, src, tgt):
+        self.net.eval()
+        encoder_input = paddle.index_select(src, self.encoder_idx, axis=2)
+        with amp_guard_context(self.training_args.fp16):
+            decoder_start_inputs = encoder_input[:, :, :1, :]
+            decoder_input_list = [decoder_start_inputs]
+
+            encoder_output = self.net.encode(encoder_input, self.encoder_idx)
+
+            for step in range(self.training_args.tgt_len):
+                decoder_inputs = paddle.concat(decoder_input_list, axis=2)
+                decoder_output = self.net.decode(decoder_inputs, encoder_output)
+                decoder_input_list = [decoder_start_inputs, decoder_output]
+
+            loss = self.criterion1(decoder_output, tgt)
+
         return decoder_output, loss
 
     def compute_eval_loss(self):
-        self.net.eval()
-
         with paddle.no_grad():
             all_eval_loss = []  # 记录了所有batch的loss
             start_time = time()
             for batch_index, batch_data in enumerate(self.eval_dataloader):
                 src, tgt = batch_data
-                predict_output, eval_loss = self.train_one_step(src, tgt)
-                all_eval_loss.append(eval_loss)
+                predict_output, eval_loss = self.eval_one_step(src, tgt)
+                all_eval_loss.append(eval_loss.numpy())
 
-            eval_loss = sum(all_eval_loss) / len(all_eval_loss)
+            eval_loss = np.mean(all_eval_loss)
             self.logger.info(f"eval cost time: {time() - start_time}s")
-            self.logger.info(f"eval_loss: {eval_loss.numpy()}")
+            self.logger.info(f"eval_loss: {eval_loss}")
         return eval_loss
 
-    def test_val_one_step(self, src, tgt):
-        self.net.eval()
-        fix_day = paddle.arange(
-            start=self.training_args.his_len - 288,
-            end=self.training_args.his_len - 288 + 12,
-        )
-        fix_hour = paddle.arange(
-            start=self.training_args.his_len - 12, end=self.training_args.his_len
-        )
-        encoder_idx = [fix_day, fix_hour]
-        encoder_input = paddle.index_select(src, paddle.concat(encoder_idx), axis=2)
-        encoder_idx = paddle.concat(encoder_idx)
-
-        decoder_start_inputs = tgt[:, :, :1, :]
-        decoder_input_list = [decoder_start_inputs]
-
-        encoder_output = self.net.encode(encoder_input, encoder_idx)
-
-        for step in range(self.training_args.tgt_len):
-            decoder_inputs = paddle.concat(decoder_input_list, axis=2)
-            predict_output = self.net.decode(decoder_inputs, encoder_output)
-            decoder_input_list = [decoder_start_inputs, predict_output]
-
-        return predict_output, None
-
-    def compute_test_loss(self, in_training=False):
-        self.net.eval()
-
+    def compute_test_loss(self):
         with paddle.no_grad():
             preds = []
             tgts = []
             start_time = time()
             for batch_index, batch_data in enumerate(self.test_dataloader):
                 src, tgt = batch_data
-                predict_output, _ = self.test_val_one_step(src, tgt)
+                predict_output, _ = self.test_one_step(src, tgt)
 
                 preds.append(predict_output.detach().numpy())
                 tgts.append(tgt.detach().numpy())
@@ -326,9 +388,9 @@ class Trainer:
             self.logger.info(excel_list)
 
     def run_test(self, epoch):
-        params_filename = os.path.join(self.save_path, "epoch_%s.params" % epoch)
-        print("load weight from:", params_filename, flush=True)
-        self.net.load_state_dict(paddle.load(params_filename))
+        params_filename = os.path.join(self.save_path, "epoch_best.params")
+        self.logger.info(f"load weight from: {params_filename}")
+        self.net.set_state_dict(paddle.load(params_filename))
         self.compute_test_loss()
 
 

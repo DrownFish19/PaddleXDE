@@ -11,10 +11,13 @@ class GCN(nn.Layer):
         self.register_buffer("norm_adj_matrix", norm_adj_matrix)
         self.register_buffer("norm_sc_matrix", norm_sc_matrix)
         self.Theta = nn.Linear(
-            training_args.d_model, training_args.d_model, bias_attr=False
+            training_args.d_model,
+            training_args.d_model,
+            bias_attr=False,
         )
         self.alpha = paddle.create_parameter(
-            shape=[1], dtype=paddle.get_default_dtype()
+            shape=[1],
+            dtype=paddle.get_default_dtype(),
         )
         self.beta = paddle.create_parameter(shape=[1], dtype=paddle.get_default_dtype())
 
@@ -24,8 +27,11 @@ class GCN(nn.Layer):
         :param x: (batch_size, N, F_in)
         :return: (batch_size, N, F_out)
         """
-        x_gcn = self.alpha * paddle.matmul(self.norm_adj_matrix, x)
-        x_gcn += self.beta * paddle.matmul(self.norm_sc_matrix, x)
+        adj = paddle.add(
+            self.alpha * self.norm_adj_matrix,
+            self.beta * self.norm_sc_matrix,
+        )
+        x_gcn = paddle.matmul(adj, x)
         # [N,N][B,N,in]->[B,N,in]->[B,N,out]
         return F.relu(self.Theta(x_gcn))
 
@@ -77,11 +83,11 @@ class SpatialAttentionGCN(nn.Layer):
         if self.is_scale:
             spatial_attention = spatial_attention / math.sqrt(self.args.d_model)
         x = x.transpose([0, 2, 1, 3])  # [B,T,N,D]
-        x_gcn = self.alpha * paddle.matmul(
-            paddle.multiply(spatial_attention, self.norm_adj), x
+
+        adj = paddle.add(
+            self.alpha * paddle.multiply(spatial_attention, self.norm_adj),
+            self.beta * paddle.multiply(spatial_attention, self.norm_sc),
         )
-        x_gcn += self.beta * paddle.matmul(
-            paddle.multiply(spatial_attention, self.norm_sc), x
-        )
+        x_gcn = paddle.matmul(adj, x)
         # [B, N, T, D]
         return F.relu(self.linear(x_gcn).transpose([0, 2, 1, 3]))
