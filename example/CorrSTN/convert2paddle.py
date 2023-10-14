@@ -110,7 +110,7 @@ model.load_dict(new_weight_dict)
 his_index = paddle.concat([paddle.arange(0, 12)])
 encoder_input = paddle.to_tensor(np.ones([1, 80, 12, 1]), dtype=paddle.float32)
 decoder_input = paddle.to_tensor(np.ones([1, 80, 12, 1]), dtype=paddle.float32)
-print(model(encoder_input, his_index, decoder_input)[0, 0, :, :])
+print(model(encoder_input, his_index, decoder_input)[0, -1, :, :])
 
 # for convert model with [week, day, hour] input, the conv of corrstn in paddle is
 # different from conv of corrstn in torch, which list as follows:
