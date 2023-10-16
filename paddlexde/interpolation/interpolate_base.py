@@ -68,7 +68,7 @@ class InterpolationBase(nn.Layer, metaclass=abc.ABCMeta):
         """
         t = paddle.to_tensor(t, dtype=self._series.dtype)
         if len(t.shape) == 1:
-            t = t.expand([self._batch_size, t.shape[-1]])
+            t = t.expand([1, t.shape[-1]])
         maxlen = self._series.shape[-2] - 1
 
         # [B, T], [B, T], [B, T]
@@ -81,7 +81,7 @@ class InterpolationBase(nn.Layer, metaclass=abc.ABCMeta):
         _t = paddle.reshape(self._t, shape=[-1, _t_shape[-1]])
         _scale_t = paddle.reshape(self._scale_t, shape=[-1, _scale_t_shape[-1]])
 
-        for bs in range(self._batch_size):
+        for bs in range(t_shape[0]):
             t_i, _t_i, _scale_t_i = t[bs], _t[bs], _scale_t[bs]
             # clamp because t may go outside of [t[0], t[-1]]; this is fine
             # will never access the last element of self._t; this is correct behaviour
