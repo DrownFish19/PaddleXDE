@@ -5,26 +5,27 @@ from paddle import nn
 
 
 class InterpolationBase(nn.Layer, metaclass=abc.ABCMeta):
-    def __init__(self, series, t=None, **kwargs):
+    def __init__(self, series, t=None):
         """_summary_
 
         Args:
             series (_type_): [B, T, D]
-            t (_type_, optional): [B, T]. Defaults to None.
+            t (_type_, optional): [T]. Defaults to None.
 
             the B dim can be ignored
         """
         super().__init__()
 
+        self.default_type = paddle.get_default_dtype()
         if t is None:
             t = paddle.linspace(
                 0,
                 series.shape[-2],
                 series.shape[-2] + 1,
-                dtype=series.dtype,
-            ).expand(series.shape[:-1])
-        series = paddle.cast(series, dtype="float32")
-        t = paddle.cast(t, dtype="float32")
+                dtype=self.default_type,
+            )  # [B, T]
+        series = paddle.cast(series, dtype=self.default_type)
+        t = paddle.cast(t, dtype=self.default_type)
 
         series_arr, scale_t = self._make_series(series=series, t=t)
         derivs = self._make_derivative(series, t)
@@ -57,8 +58,7 @@ class InterpolationBase(nn.Layer, metaclass=abc.ABCMeta):
         """Calculates the index of the given time point t in the list of time points.
 
         Args:
-            t (_type_): time point t [B, T]
-            B can be ignored => [T]
+            t (_type_): time point t [T]
 
         Raises:
             NotImplementedError:
@@ -66,32 +66,15 @@ class InterpolationBase(nn.Layer, metaclass=abc.ABCMeta):
         Retuns:
             The index of the given time point t in the list of time points.
         """
-        t = paddle.to_tensor(t, dtype=self._series.dtype)
-        if len(t.shape) == 1:
-            t = t.expand([1, t.shape[-1]])
+        t = paddle.to_tensor(t, dtype=self.default_type)
         maxlen = self._series.shape[-2] - 1
 
-        # [B, T], [B, T], [B, T]
-        t_shape, _t_shape, _scale_t_shape = t.shape, self._t.shape, self._scale_t.shape
-
-        index = []
-        norm_t = []
-
-        t = paddle.reshape(t, shape=[-1, t_shape[-1]])
-        _t = paddle.reshape(self._t, shape=[-1, _t_shape[-1]])
-        _scale_t = paddle.reshape(self._scale_t, shape=[-1, _scale_t_shape[-1]])
-
-        for bs in range(t_shape[0]):
-            t_i, _t_i, _scale_t_i = t[bs], _t[bs], _scale_t[bs]
-            # clamp because t may go outside of [t[0], t[-1]]; this is fine
-            # will never access the last element of self._t; this is correct behaviour
-            index_i = (paddle.bucketize(t_i, _t_i) - 1).clip(0, maxlen)  # [T]
-            norm_t_i = (t_i - _t_i[index_i]) / _scale_t_i[index_i]  # [T]
-            index.append(index_i)
-            norm_t.append(norm_t_i)
-
-        index = paddle.stack(index, axis=0).reshape(t_shape)  # [B, T]
-        norm_t = paddle.stack(norm_t, axis=0).reshape(t_shape)  # [B, T]
+        # clamp because t may go outside of [t[0], t[-1]]; this is fine
+        # will never access the last element of self._t; this is correct behaviour
+        index = (paddle.bucketize(t, self._t) - 1).clip(0, maxlen)  # [T]
+        norm_t = (t - paddle.index_select(self._t, index)) / paddle.index_select(
+            self._scale_t, index
+        )  # [T]
 
         # [B, T, 1, M], M is 2 for linear, 4 for cubic
         ts_tensor = self.ts(norm_t, der=der)
@@ -116,9 +99,7 @@ class InterpolationBase(nn.Layer, metaclass=abc.ABCMeta):
         ts_tensor, ps_tensor, index = self.interpolate(t, der=False)
         # [B, T, 1, D] => [B, T, D]
         result = (ts_tensor @ self._h.to_dense() @ ps_tensor).squeeze(-2)
-        axis_b = paddle.arange(self._batch_size)[:, None]
-        axis_index = index[:, :]
-        scale = self._scale_t[axis_b, axis_index].unsqueeze(-1)  # [B, T, 1]
+        scale = paddle.index_select(self._scale_t, index)  # [B, T, 1]
         result *= scale
         return result
 
@@ -143,6 +124,15 @@ class InterpolationBase(nn.Layer, metaclass=abc.ABCMeta):
 
     @abc.abstractmethod
     def _make_series(self, series, t):
+        """_summary_
+
+        Args:
+            series (_type_): [B, T, D]
+            t (_type_): [B, T]
+
+        Raises:
+            NotImplementedError: _description_
+        """
         raise NotImplementedError
 
     @abc.abstractmethod
