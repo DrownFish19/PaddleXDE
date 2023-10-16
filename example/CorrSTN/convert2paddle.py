@@ -85,7 +85,7 @@ sc_matrix = paddle.to_tensor(norm_adj_matrix(sc_matrix), default_dtype)
 
 model = CorrSTN(args, adj_matrix, sc_matrix)
 
-ckpt = "example/CorrSTN/ckpt/epoch_387.params"
+ckpt = "example/CorrSTN/ckpt/epoch_143.params"
 torch_weight = torch.load(ckpt, map_location=torch.device("cpu"))
 for param_tensor in torch_weight:
     print(f"{param_tensor} \t {torch_weight[param_tensor].shape}")
@@ -112,11 +112,6 @@ encoder_input = paddle.to_tensor(np.ones([1, 80, 12, 1]), dtype=paddle.float32)
 decoder_input = paddle.to_tensor(np.ones([1, 80, 12, 1]), dtype=paddle.float32)
 print(model(encoder_input, his_index, decoder_input)[0, -1, :, :])
 
-# for convert model with [week, day, hour] input, the conv of corrstn in paddle is
-# different from conv of corrstn in torch, which list as follows:
-# paddle: conv(concat([week, day, hour]))
-# torch: concat([conv(week), conv(day), conv(hour)])
-#
 # for convert model with [hour]
 # if output is close follows, the convert is ok.
 # [0.29537824]
@@ -131,3 +126,14 @@ print(model(encoder_input, his_index, decoder_input)[0, -1, :, :])
 # [0.38128358]
 # [0.33716473]
 # [0.34575891]
+
+
+# his_index = paddle.concat([paddle.arange(0, 24)])
+# encoder_input = paddle.to_tensor(np.ones([1, 80, 24, 1]), dtype=paddle.float32)
+# decoder_input = paddle.to_tensor(np.ones([1, 80, 12, 1]), dtype=paddle.float32)
+# print(model(encoder_input, his_index, decoder_input)[0, -1, :, :])
+
+# for convert model with [week, day, hour] input, the conv of corrstn in paddle is
+# different from conv of corrstn in torch, which list as follows:
+# paddle: conv(concat([week, day, hour]))
+# torch: concat([conv(week), conv(day), conv(hour)])

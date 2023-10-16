@@ -79,15 +79,15 @@ class Trainer:
         )
         self.eval_dataloader = DataLoader(
             self.val_dataset,
-            batch_size=self.training_args.batch_size,
+            batch_size=self.training_args.batch_size * 32,
             shuffle=False,
-            drop_last=True,
+            drop_last=False,
         )
         self.test_dataloader = DataLoader(
             self.test_dataset,
-            batch_size=self.training_args.batch_size,
+            batch_size=self.training_args.batch_size * 32,
             shuffle=False,
-            drop_last=True,
+            drop_last=False,
         )
 
         self.encoder_idx = []
@@ -296,7 +296,7 @@ class Trainer:
         self.net.eval()
         encoder_input = paddle.index_select(src, self.encoder_idx, axis=2)
         with amp_guard_context(self.training_args.fp16):
-            decoder_start_inputs = encoder_input[:, :, :1, :]
+            decoder_start_inputs = encoder_input[:, :, -1:, :]
             decoder_input_list = [decoder_start_inputs]
 
             encoder_output = self.net.encode(encoder_input, self.encoder_idx)
@@ -314,7 +314,7 @@ class Trainer:
         self.net.eval()
         encoder_input = paddle.index_select(src, self.encoder_idx, axis=2)
         with amp_guard_context(self.training_args.fp16):
-            decoder_start_inputs = encoder_input[:, :, :1, :]
+            decoder_start_inputs = encoder_input[:, :, -1:, :]
             decoder_input_list = [decoder_start_inputs]
 
             encoder_output = self.net.encode(encoder_input, self.encoder_idx)
@@ -369,25 +369,25 @@ class Trainer:
 
             for i in range(prediction_length):
                 assert preds.shape[0] == trues.shape[0]
-                mae = mean_absolute_error(preds[:, :, i, 0], trues[:, :, i, 0])
-                rmse = mean_squared_error(preds[:, :, i, 0], trues[:, :, i, 0]) ** 0.5
-                mape = masked_mape_np(preds[:, :, i, 0], trues[:, :, i, 0], 0)
+                mae = mean_absolute_error(trues[:, :, i, 0], preds[:, :, i, 0])
+                rmse = mean_squared_error(trues[:, :, i, 0], preds[:, :, i, 0]) ** 0.5
+                mape = masked_mape_np(trues[:, :, i, 0], preds[:, :, i, 0], 0)
                 self.logger.info(f"{i} MAE: {mae}")
                 self.logger.info(f"{i} RMSE: {rmse}")
                 self.logger.info(f"{i} MAPE: {mape}")
                 excel_list.extend([mae, rmse, mape])
 
             # print overall results
-            mae = mean_absolute_error(preds.reshape(-1, 1), trues.reshape(-1, 1))
-            rmse = mean_squared_error(preds.reshape(-1, 1), trues.reshape(-1, 1)) ** 0.5
-            mape = masked_mape_np(preds.reshape(-1, 1), trues.reshape(-1, 1), 0)
+            mae = mean_absolute_error(trues.reshape(-1, 1), preds.reshape(-1, 1))
+            rmse = mean_squared_error(trues.reshape(-1, 1), preds.reshape(-1, 1)) ** 0.5
+            mape = masked_mape_np(trues.reshape(-1, 1), preds.reshape(-1, 1), 0)
             self.logger.info(f"all MAE: {mae}")
             self.logger.info(f"all RMSE: {rmse}")
             self.logger.info(f"all MAPE: {mape}")
             excel_list.extend([mae, rmse, mape])
             self.logger.info(excel_list)
 
-    def run_test(self, epoch):
+    def run_test(self):
         params_filename = os.path.join(self.save_path, "epoch_best.params")
         self.logger.info(f"load weight from: {params_filename}")
         self.net.set_state_dict(paddle.load(params_filename))
@@ -397,3 +397,4 @@ class Trainer:
 if __name__ == "__main__":
     trainer = Trainer(training_args=args)
     trainer.train()
+    trainer.run_test()

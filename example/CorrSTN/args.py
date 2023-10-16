@@ -41,6 +41,7 @@ parser.add_argument("--encoder_num_layers", type=int, default=4)
 parser.add_argument("--decoder_num_layers", type=int, default=4)
 parser.add_argument("--d_model", type=int, default=64)
 parser.add_argument("--attention", type=str, default="Corr", help="Corr,Vanilla")
+parser.add_argument("--split_seq", type=bool, default=False, help="split q k v")
 parser.add_argument("--head", type=int, default=8, help="head")
 parser.add_argument("--kernel_size", type=int, default=3, help="kernel_size")
 parser.add_argument("--top_k", type=int, default=5, help="top_k")
@@ -58,7 +59,7 @@ parser.add_argument("--patience", type=int, default=8, help="early stopping pati
 parser.add_argument("--loss", type=str, default="mse", help="loss function")
 parser.add_argument("--dropout", type=float, default=0.0, help="dropout")
 parser.add_argument("--continue_training", type=bool, default=False, help="")
-parser.add_argument("--fp16", type=bool, default=True, help="")
+parser.add_argument("--fp16", type=bool, default=False, help="")
 
 args = parser.parse_args("")
 os.environ["CUDA_VISIBLE_DEVICES"] = args.devices

@@ -179,11 +179,13 @@ class TrafficFlowDataset(Dataset):
         tgt_begin = his_end
         tgt_end = tgt_begin + self.training_args.tgt_len
 
-        if tgt_begin % 288 < 60:
-            his_begin += 60
-            his_end += 60
-            tgt_begin += 60
-            tgt_end += 60
+        if "HZME" in self.training_args.dataset_name:
+            if tgt_begin % 288 < 72:
+                offset = 72
+                his_begin += offset
+                his_end += offset
+                tgt_begin += offset
+                tgt_end += offset
 
         # print(self.data_type, his_begin, his_end, tgt_begin, tgt_end)
 

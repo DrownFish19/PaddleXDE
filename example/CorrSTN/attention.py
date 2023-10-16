@@ -106,7 +106,7 @@ class MultiHeadAttentionAwareTemporalContext(nn.Layer):
         key_conv_type="1DConv",
     ):
         super(MultiHeadAttentionAwareTemporalContext, self).__init__()
-
+        self.training_args = args
         assert args.d_model % args.head == 0
         self.head_dim = args.d_model // args.head
         self.heads = args.head
@@ -175,11 +175,24 @@ class MultiHeadAttentionAwareTemporalContext(nn.Layer):
 
     def aware_temporal(self, func, conv_type, data):
         B, N, T, D = data.shape
-        data_conv = func(data.transpose([0, 3, 1, 2]))  # B, D, N, T
-        data_conv = data_conv.transpose([0, 2, 3, 1])  # B, N, T, D
 
-        if conv_type == "causal":
-            data_conv = data_conv[:, :, : -self.padding_causal, :]
+        if self.training_args.split_seq and T >= 12:
+            data_conv = []
+            for i in range(T // 12):
+                # B, D, N, T
+                res = func(data[:, :, i * 12 : (i + 1) * 12, :].transpose([0, 3, 1, 2]))
+                res = res.transpose([0, 2, 3, 1])  # B, N, T, D
+
+                if conv_type == "causal":
+                    res = res[:, :, : -self.padding_causal, :]
+                data_conv.append(res)
+            data_conv = paddle.concat(data_conv, axis=-2)
+        else:
+            data_conv = func(data.transpose([0, 3, 1, 2]))  # B, D, N, T
+            data_conv = data_conv.transpose([0, 2, 3, 1])  # B, N, T, D
+
+            if conv_type == "causal":
+                data_conv = data_conv[:, :, : -self.padding_causal, :]
 
         # [B,N,T,D]
         return data_conv
