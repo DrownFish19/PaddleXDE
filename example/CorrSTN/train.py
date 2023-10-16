@@ -234,6 +234,7 @@ class Trainer:
             # finetune => load best trainging model
             if epoch == self.training_args.train_epochs:
                 self._init_finetune()
+                self.compute_test_loss()
 
             self.net.train()  # ensure dropout layers are in train mode
             tr_s_time = time()
