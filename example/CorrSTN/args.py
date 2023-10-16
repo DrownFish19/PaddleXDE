@@ -60,6 +60,7 @@ parser.add_argument("--loss", type=str, default="mse", help="loss function")
 parser.add_argument("--dropout", type=float, default=0.0, help="dropout")
 parser.add_argument("--continue_training", type=bool, default=False, help="")
 parser.add_argument("--fp16", type=bool, default=False, help="")
+parser.add_argument("--distribute", type=bool, default=False, help="")
 
 args = parser.parse_args("")
 os.environ["CUDA_VISIBLE_DEVICES"] = args.devices
