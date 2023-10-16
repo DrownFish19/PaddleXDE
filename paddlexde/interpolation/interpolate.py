@@ -196,7 +196,7 @@ class CubicHermiteSpline(InterpolationBase):
                 paddle.index_select(self._series_arr[..., 0, :], index, axis=-2),
                 paddle.index_select(self._series_arr[..., 1, :], index, axis=-2),
                 paddle.index_select(self._derivs, index, axis=-2),
-                paddle.index_select(self._derivs, index, axis=-2),
+                paddle.index_select(self._derivs, index + 1, axis=-2),
             ],
             axis=-2,
         )

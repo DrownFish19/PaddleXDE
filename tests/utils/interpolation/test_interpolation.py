@@ -76,7 +76,7 @@ class TestInterpolationForDynamicDeriv(unittest.TestCase):
 
     def test_CubicHermiteSpline(self):
         interp = CubicHermiteSpline(self.series, self.t)
-        assert paddle.allclose(self.val_tgt, interp.evaluate(self.t_eval), rtol=5e-2)
+        assert paddle.allclose(self.val_tgt, interp.evaluate(self.t_eval), rtol=1e-5)
         assert paddle.allclose(self.tgt_deri, interp.derivative(self.t_eval), rtol=1e-2)
 
     def test_BezierSpline(self):

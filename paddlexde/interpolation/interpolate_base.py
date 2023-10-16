@@ -72,9 +72,8 @@ class InterpolationBase(nn.Layer, metaclass=abc.ABCMeta):
         # clamp because t may go outside of [t[0], t[-1]]; this is fine
         # will never access the last element of self._t; this is correct behaviour
         index = (paddle.bucketize(t, self._t) - 1).clip(0, maxlen)  # [T]
-        norm_t = (t - paddle.index_select(self._t, index)) / paddle.index_select(
-            self._scale_t, index
-        )  # [T]
+        norm_t = t - paddle.index_select(self._t, index)
+        norm_t /= paddle.index_select(self._scale_t, index)  # [T]
 
         # [B, T, 1, M], M is 2 for linear, 4 for cubic
         ts_tensor = self.ts(norm_t, der=der)
