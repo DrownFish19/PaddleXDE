@@ -311,8 +311,11 @@ class Trainer:
 
         with amp_guard_context(self.training_args.fp16):
             if not self.finetune:
+                decoder_input = paddle.concat(
+                    [src[:, :, -1:, :], tgt[:, :, :-1, :]], axis=-2
+                )
                 decoder_output = self.net(
-                    src=encoder_input, src_idx=self.encoder_idx, tgt=tgt
+                    src=encoder_input, src_idx=self.encoder_idx, tgt=decoder_input
                 )
             else:
                 decoder_start_inputs = encoder_input[:, :, -1:, :]
