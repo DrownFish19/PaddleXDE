@@ -98,8 +98,8 @@ class InterpolationBase(nn.Layer, metaclass=abc.ABCMeta):
         ts_tensor, ps_tensor, index = self.interpolate(t, der=False)
         # [B, T, 1, D] => [B, T, D]
         result = (ts_tensor @ self._h.to_dense() @ ps_tensor).squeeze(-2)
-        scale = paddle.index_select(self._scale_t, index)  # [B, T, 1]
-        result *= scale
+        scale = paddle.index_select(self._scale_t, index)  # [T]
+        result *= scale.unsqueeze(-1)
         return result
 
     def derivative(self, t):
