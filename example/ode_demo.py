@@ -47,7 +47,8 @@ if __name__ == "__main__":
             # batch_y0 : [B, D]
             # batch_t  : [B, T]
             # batch_y  : [B, T, D]
-            pred_y = odeint(func, batch_y0, batch_t, solver=RK4)
+            t_span = paddle.linspace(0.0, 25.0, demo_utils.args.data_len)[:pred_len]
+            pred_y = odeint(func, batch_y0, t_span, solver=RK4)
             loss = paddle.mean(paddle.abs(pred_y - batch_y))
             loss.backward()
             optimizer.step()
@@ -61,7 +62,7 @@ if __name__ == "__main__":
             if global_step % demo_utils.args.test_steps == 0:
                 with paddle.no_grad():
                     y0 = demo_utils.data.true_y0.unsqueeze(0)  # [1, D]
-                    t_span = demo_utils.data.t_span.unsqueeze(0)  # [T]
+                    t_span = demo_utils.data.t_span  # [T]
                     true_y = demo_utils.data.true_y.unsqueeze(0)  # [1, T, D]
                     pred_y = xdeint(func, y0, t_span, solver=RK4)
                     loss = paddle.mean(paddle.abs(pred_y - true_y))

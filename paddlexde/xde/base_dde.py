@@ -143,5 +143,5 @@ class HistoryIndex(autograd.PyLayer):
             output = func(t0, y0, _lags, _y_lags)
         paddle.autograd.backward([output], [grad_y], True)
 
-        return None, None, _y_lags.grad * derivative_lags * 1000, None, None
+        return None, None, _y_lags.grad * derivative_lags * 10000, None, None
         # return None, grad_y_lags * derivative_lags, None, None, None

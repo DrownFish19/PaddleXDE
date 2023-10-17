@@ -68,7 +68,7 @@ if __name__ == "__main__":
     demo_utils.make_dataloader(dde_dataset)
 
     # [T], T is pred_len
-    lags = paddle.randint(low=0, high=his_len, shape=[20])
+    lags = paddle.randint(low=0, high=his_len, shape=[32])
     lags = paddle.cast(lags, dtype=paddle.float32)
     lags.stop_gradient = False
 
@@ -92,11 +92,13 @@ if __name__ == "__main__":
             # batch_y        : [B, T, D], T is pred_len
             # batch_his      : [B, T, D], T is his_len
             # his_span       : [T], T is his_len
+            print(lags.numpy())
+            t_span = paddle.linspace(0.0, 25.0, demo_utils.args.data_len)[:pred_len]
             his_span = paddle.arange(his_len)
             pred_y = xdeint(
                 func,
                 batch_y0,
-                batch_t_span,
+                t_span,
                 lags,
                 batch_his,
                 his_span,
@@ -120,7 +122,7 @@ if __name__ == "__main__":
                 with paddle.no_grad():
                     data = demo_utils.data
                     y0 = data.true_y[his_len].unsqueeze(0)  # [1, D]
-                    t_span = data.t_span[his_len + 1 :].unsqueeze(0)  # [1, T]
+                    t_span = data.t_span[his_len + 1 :]  # [T]
                     true_y = data.true_y[his_len + 1 :].unsqueeze(0)  # [1, T, D]
                     his = data.true_y[:his_len].unsqueeze(0)  # [1, T, D]
                     his_span = data.t_span[:his_len]  # [T]

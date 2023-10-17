@@ -74,8 +74,8 @@ class FixedSolver(metaclass=abc.ABCMeta):
             Returns:
                 _type_: _description_
             """
-            start_time = t[..., 0]
-            end_time = t[..., -1]
+            start_time = t[0]
+            end_time = t[-1]
 
             niters = paddle.ceil((end_time - start_time) / step_size + 1).item()
             t_infer = (
@@ -103,7 +103,7 @@ class FixedSolver(metaclass=abc.ABCMeta):
         """_summary_
 
         Args:
-            t_span (paddle.Tensor): [batch_size, pred_len]
+            t_span (paddle.Tensor): [pred_len]
 
         Raises:
             ValueError: _description_
@@ -112,11 +112,11 @@ class FixedSolver(metaclass=abc.ABCMeta):
             _type_: _description_
         """
 
-        batch_size, pred_len = t_span.shape
+        pred_len = len(t_span)
         time_grid = self.grid_constructor(self.y0, t_span)
         # time_grid = t_span
-        assert paddle.equal_all(time_grid[..., 0], t_span[..., 0])
-        assert paddle.equal_all(time_grid[..., -1], t_span[..., -1])
+        assert paddle.equal_all(time_grid[0], t_span[0])
+        assert paddle.equal_all(time_grid[-1], t_span[-1])
 
         # sol solution [pred_len, batch_size, dims]
         sol = paddle.empty(shape=[pred_len] + self.y0.shape, dtype=self.y0.dtype)
@@ -125,16 +125,16 @@ class FixedSolver(metaclass=abc.ABCMeta):
         y0 = self.y0
 
         for i in range(1, pred_len):
-            t0, t1 = time_grid[..., i - 1 : i], time_grid[..., i : i + 1]
+            t0, t1 = time_grid[i - 1 : i], time_grid[i : i + 1]
             y1, dy0 = self.step(t0, t1, y0)
 
             # while j < pred_len and paddle.greater_equal(t1, t_span[..., j]):
             if self.interp == "linear":
-                sol[i] = linear_interp(t0, t1, y0, y1, t_span[..., i : i + 1])
+                sol[i] = linear_interp(t0, t1, y0, y1, t_span[i : i + 1])
             elif self.interp == "cubic":
                 y2, dy1 = self.step(t1, t1, y1)
                 sol[i] = cubic_hermite_interp(
-                    t0, y0, dy0, t1, y1, dy1, t_span[..., i : i + 1]
+                    t0, y0, dy0, t1, y1, dy1, t_span[i : i + 1]
                 )
             else:
                 raise ValueError(f"Unknown interpolation method {self.interp}")
