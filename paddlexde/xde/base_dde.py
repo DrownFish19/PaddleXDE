@@ -33,6 +33,9 @@ class BaseDDE(BaseXDE):
 
         self.func = func
         self.lags = lags
+        self.y_lags = HistoryIndex.apply(
+            func=func, t0=t_span[0], y0=y0, lags=lags, his=his, his_span=his_span
+        )
         self.his = his
         self.his_span = his_span
         self.init_y0(y0)
@@ -47,12 +50,9 @@ class BaseDDE(BaseXDE):
         # self.init_lags()
         # input_history = paddle.index_select(self.history, self.lags)
 
-        y_lags = HistoryIndex.apply(
-            xde=self, t0=t0, y0=y0, lags=self.lags, his=self.his, his_span=self.his_span
-        )
         # y_lags [B, T, D]  T是选择后的序列长度
 
-        dy = self.call_func(t0, y0, self.lags, y_lags)
+        dy = self.call_func(t0, y0, self.lags, self.y_lags)
         return dy
 
     def fuse(self, dy, dt, y0):
@@ -80,7 +80,7 @@ class BaseDDE(BaseXDE):
 
 
 class HistoryIndex(autograd.PyLayer):
-    def forward(ctx, xde: BaseXDE, t0, y0, lags, his, his_span, interp_method="linear"):
+    def forward(ctx, func, t0, y0, lags, his, his_span, interp_method="linear"):
         """
         计算给定输入序列的未来值，并返回计算结果。
         传入lags, history,
@@ -99,26 +99,25 @@ class HistoryIndex(autograd.PyLayer):
         Raises:
             NotImplementedError: 如果interp_method不是上述三种情况之一, 将抛出NotImplementedError异常。
         """
-        if interp_method == "linear":
-            interp = LinearInterpolation(his, his_span)
-        elif interp_method == "cubic":
-            interp = CubicHermiteSpline(his, his_span)
-        elif interp_method == "bez":
-            interp = BezierSpline(his, his_span)
-        else:
-            raise NotImplementedError
+        with paddle.no_grad():
+            if interp_method == "linear":
+                interp = LinearInterpolation(his, his_span)
+            elif interp_method == "cubic":
+                interp = CubicHermiteSpline(his, his_span)
+            elif interp_method == "bez":
+                interp = BezierSpline(his, his_span)
+            else:
+                raise NotImplementedError
 
-        y_lags = interp.evaluate(lags)
-        # y_lags = paddle.index_select(his, lags, axis=-2)
-        assert isinstance(y_lags, paddle.Tensor)
-        y_lags.stop_gradient = False
+            y_lags = interp.evaluate(lags)
+            derivative_lags = interp.derivative(lags)
 
-        ctx.t0 = t0
-        ctx.y0 = y0
-        ctx.lags = lags
-        ctx.derivative_lags = interp.derivative(lags)
-        ctx.xde = xde
-        ctx.y_lags = y_lags
+            ctx.t0 = t0
+            ctx.y0 = y0
+            ctx.lags = lags
+            ctx.func = func
+
+            ctx.save_for_backward(y_lags, derivative_lags)
 
         return y_lags
 
@@ -129,21 +128,20 @@ class HistoryIndex(autograd.PyLayer):
         t0 = ctx.t0
         y0 = ctx.y0
         lags = ctx.lags
-        derivative_lags = ctx.derivative_lags
-        xde = ctx.xde
-        y_lags = ctx.y_lags
-        y_lags.stop_gradient = False
+        func = ctx.func
+
+        y_lags, derivative_lags = ctx.saved_tensor()
+
+        _y_lags = y_lags.detach()
+        _y_lags = paddle.assign(y_lags)
+        _y_lags.stop_gradient = False
+
+        _lags = lags.detach()
+        _lags = paddle.assign(lags)
 
         with paddle.set_grad_enabled(True):
-            eval = xde.call_func(t0, y0, lags, y_lags)
+            output = func(t0, y0, _lags, _y_lags)
+        paddle.autograd.backward([output], [grad_y], True)
 
-            grad_y_lags = paddle.grad(
-                outputs=[eval],
-                inputs=[y_lags],
-                grad_outputs=grad_y,
-                only_inputs=True,
-                allow_unused=True,
-                retain_graph=True,
-            )[0]
-        return None, None, grad_y_lags * derivative_lags, None, None
+        return None, None, _y_lags.grad * derivative_lags * 1000, None, None
         # return None, grad_y_lags * derivative_lags, None, None, None

@@ -5,6 +5,8 @@ from example.demo_utils import DemoUtils
 from paddlexde.functional import odeint, odeint_adjoint
 from paddlexde.solver.fixed_solver import RK4
 
+paddle.seed(42)
+
 demo_utils = DemoUtils()
 if demo_utils.args.adjoint:
     xdeint = odeint_adjoint
@@ -32,6 +34,7 @@ class ODEFunc(nn.Layer):
 
 
 if __name__ == "__main__":
+    pred_len = demo_utils.args.pred_len
     func = ODEFunc()
     optimizer = paddle.optimizer.RMSProp(
         parameters=func.parameters(), learning_rate=1e-3
@@ -58,7 +61,7 @@ if __name__ == "__main__":
             if global_step % demo_utils.args.test_steps == 0:
                 with paddle.no_grad():
                     y0 = demo_utils.data.true_y0.unsqueeze(0)  # [1, D]
-                    t_span = demo_utils.data.t_span.unsqueeze(0)  # [1, T]
+                    t_span = demo_utils.data.t_span.unsqueeze(0)  # [T]
                     true_y = demo_utils.data.true_y.unsqueeze(0)  # [1, T, D]
                     pred_y = xdeint(func, y0, t_span, solver=RK4)
                     loss = paddle.mean(paddle.abs(pred_y - true_y))

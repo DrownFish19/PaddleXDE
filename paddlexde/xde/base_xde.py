@@ -86,38 +86,13 @@ class BaseXDE(ABC, nn.Layer):
         print(f"current method is {self.name}.")
         return self.name
 
+    @abstractmethod
     def unflatten(self, input, length):
-        batch_size = input.shape[0]  # 默认第一维是batch_size
+        raise NotImplementedError
 
-        length_shape = [] if length == 1 else [length]
-        if len(self.shapes) == 1:
-            return input.reshape(length_shape + self.shapes[0])
-
-        output = []
-        total = 0
-
-        # TODO:此处需要验证
-        for shape, num_ele in zip(self.shapes, self.num_elements):
-            next_total = total + num_ele
-            output.append(
-                input[..., total:next_total].reshape(
-                    [batch_size] + length_shape + shape
-                )
-            )
-            total = next_total
-        return tuple(output)
-
+    @abstractmethod
     def flatten(self, input):
-        if isinstance(input, tuple) or isinstance(input, list):
-            output = paddle.concat(
-                [_tensor.reshape([self.batch_size, -1]) for _tensor in input]
-            )
-        elif isinstance(input, paddle.Tensor):
-            output = input.reshape([self.batch_size, -1])
-        else:
-            raise NotImplementedError
-
-        return output
+        raise NotImplementedError
 
     @abstractmethod
     def call_func(self, **kwargs):

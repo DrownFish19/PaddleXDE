@@ -36,9 +36,10 @@ class DDEFunc(nn.Layer):
 
         self.gru = paddle.nn.GRU(2, 128, 2, time_major=False)
 
-        # self.linear1 = nn.Linear(2, 64)
-        # self.linear2 = nn.Linear(2, 64)
-        # self.linear3 = nn.Linear(128, 2)
+        self.linear1.weight.set_value(0.1 * paddle.randn(self.linear1.weight.shape))
+        self.linear1.bias.set_value(paddle.zeros(self.linear1.bias.shape))
+        self.linear2.weight.set_value(0.1 * paddle.randn(self.linear2.weight.shape))
+        self.linear2.bias.set_value(paddle.zeros(self.linear2.bias.shape))
 
     def forward(self, t, y0, lags, y_lags):
         """_summary_
@@ -54,10 +55,9 @@ class DDEFunc(nn.Layer):
         """
 
         h = self.linear1(y0**3)  # [B, D] => [B, D]
-        h_lags, _ = self.gru(y_lags)  # [B, T, D] => [B, T, D]
-        h_lags = h_lags[:, -1, :]  # [B, T, D] => [B, D]
-        re = self.linear2(paddle.tanh(h) + paddle.tanh(h_lags))  # [10, 128]
-        re = self.linear2(paddle.tanh(h) + paddle.tanh(h_lags))  # [10, 128]
+        h_lags = self.gru(y_lags)[0][:, -1, :]  # [B, T, D] => [B, D]
+        h = (h + h_lags) / 2
+        re = self.linear2(paddle.tanh(h))  # [10, 128]
         return re
 
 
@@ -93,11 +93,10 @@ if __name__ == "__main__":
             # batch_his      : [B, T, D], T is his_len
             # his_span       : [T], T is his_len
             his_span = paddle.arange(his_len)
-            t_span = paddle.arange(pred_len)
             pred_y = xdeint(
                 func,
                 batch_y0,
-                t_span,
+                batch_t_span,
                 lags,
                 batch_his,
                 his_span,
@@ -108,8 +107,8 @@ if __name__ == "__main__":
             optimizer.step()
             optimizer.clear_grad()
 
-            lags = paddle.assign(lags.detach().clip(0, his_len))
-            lags.stop_gradient = False
+            # lags = paddle.assign(lags.detach().clip(0, his_len))
+            # lags.stop_gradient = False
 
             global_step += 1
             # retain_graph=True
@@ -121,7 +120,7 @@ if __name__ == "__main__":
                 with paddle.no_grad():
                     data = demo_utils.data
                     y0 = data.true_y[his_len].unsqueeze(0)  # [1, D]
-                    t_span = data.t_span[his_len + 1 :]  # [T] # TODO
+                    t_span = data.t_span[his_len + 1 :].unsqueeze(0)  # [1, T]
                     true_y = data.true_y[his_len + 1 :].unsqueeze(0)  # [1, T, D]
                     his = data.true_y[:his_len].unsqueeze(0)  # [1, T, D]
                     his_span = data.t_span[:his_len]  # [T]
