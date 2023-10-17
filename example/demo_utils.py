@@ -41,7 +41,7 @@ class DemoUtils:
         parser.add_argument("--adjoint", type=bool, default=False)
 
         # DDE
-        parser.add_argument("--his_len", type=int, default=64)
+        parser.add_argument("--his_len", type=int, default=8)
         self.args = parser.parse_args()
 
     def make_dataloader(self, dataset=None):
@@ -159,7 +159,7 @@ class SimpleDemoData(Dataset):
             self.true_y = odeint(
                 Lambda(self.trans_matrix),
                 self.true_y0.unsqueeze(0),
-                self.t_span.unsqueeze(0),
+                self.t_span,
                 solver=RK4,
             ).squeeze(0)
 

@@ -3,7 +3,7 @@ import paddle.nn as nn
 
 from example.demo_utils import DemoUtils, SimpleDemoData
 from paddlexde.functional import ddeint, ddeint_adjoint
-from paddlexde.solver.fixed_solver import Euler
+from paddlexde.solver.fixed_solver import RK4
 
 demo_utils = DemoUtils()
 if demo_utils.args.adjoint:
@@ -34,6 +34,12 @@ class DDEFunc(nn.Layer):
         self.linear1 = nn.Linear(2, 128)
         self.linear2 = nn.Linear(128, 2)
 
+        self.gru = paddle.nn.GRU(2, 128, 2, time_major=False)
+
+        # self.linear1 = nn.Linear(2, 64)
+        # self.linear2 = nn.Linear(2, 64)
+        # self.linear3 = nn.Linear(128, 2)
+
     def forward(self, t, y0, lags, y_lags):
         """_summary_
 
@@ -46,22 +52,24 @@ class DDEFunc(nn.Layer):
         Returns:
             _type_: [B, D], the shape should match y0 shape
         """
-        h = self.linear1(y0).unsqueeze(-2)  # [10, 1, 256]
-        h_his = self.linear1(y_lags)  # [10, 20, 256]
-        h_his = paddle.sum(h_his, axis=1, keepdim=True)  # [10, 1, 256]
-        re = self.linear2(h + h_his).squeeze(-2)  # [10, 128]
+
+        h = self.linear1(y0**3)  # [B, D] => [B, D]
+        h_lags, _ = self.gru(y_lags)  # [B, T, D] => [B, T, D]
+        h_lags = h_lags[:, -1, :]  # [B, T, D] => [B, D]
+        re = self.linear2(paddle.tanh(h) + paddle.tanh(h_lags))  # [10, 128]
+        re = self.linear2(paddle.tanh(h) + paddle.tanh(h_lags))  # [10, 128]
         return re
 
 
 if __name__ == "__main__":
     his_len = demo_utils.args.his_len
+    pred_len = demo_utils.args.pred_len
     dde_dataset = DDEDataset(his_len=his_len)
     demo_utils.make_dataloader(dde_dataset)
 
-    # [B, T], T is pred_len
-    lags = paddle.randint(
-        low=0, high=his_len, shape=[demo_utils.args.batch_size, 20]
-    ).astype("float32")
+    # [T], T is pred_len
+    lags = paddle.randint(low=0, high=his_len, shape=[20])
+    lags = paddle.cast(lags, dtype=paddle.float32)
     lags.stop_gradient = False
 
     func = DDEFunc()
@@ -80,18 +88,20 @@ if __name__ == "__main__":
             batch_his_span,
         ) in demo_utils.dataloader:
             # batch_y0       : [B, D]
-            # batch_t_span   : [B, T], T is pres_len
+            # t_span         : [T], T is pres_len
             # batch_y        : [B, T, D], T is pred_len
             # batch_his      : [B, T, D], T is his_len
-            # batch_his_span : [B, T], T is his_len
+            # his_span       : [T], T is his_len
+            his_span = paddle.arange(his_len)
+            t_span = paddle.arange(pred_len)
             pred_y = xdeint(
                 func,
                 batch_y0,
-                batch_t_span,
+                t_span,
                 lags,
                 batch_his,
-                batch_his_span,
-                solver=Euler,
+                his_span,
+                solver=RK4,
             )
             loss = paddle.mean(paddle.abs(pred_y - batch_y))
             loss.backward()
@@ -111,13 +121,11 @@ if __name__ == "__main__":
                 with paddle.no_grad():
                     data = demo_utils.data
                     y0 = data.true_y[his_len].unsqueeze(0)  # [1, D]
-                    t_span = data.t_span[his_len + 1 :].unsqueeze(0)  # [1, T]
+                    t_span = data.t_span[his_len + 1 :]  # [T] # TODO
                     true_y = data.true_y[his_len + 1 :].unsqueeze(0)  # [1, T, D]
                     his = data.true_y[:his_len].unsqueeze(0)  # [1, T, D]
-                    his_span = data.t_span[:his_len].unsqueeze(0)  # [1, T]
-                    pred_y = xdeint(
-                        func, y0, t_span, lags[0:1, ...], his, his_span, solver=Euler
-                    )
+                    his_span = data.t_span[:his_len]  # [T]
+                    pred_y = xdeint(func, y0, t_span, lags, his, his_span, solver=RK4)
                     loss = paddle.mean(paddle.abs(pred_y - true_y))
                     print(
                         "Iter {:04d} | Total Loss {:.6f}".format(

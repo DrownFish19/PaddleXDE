@@ -35,6 +35,10 @@ class BaseDDE(BaseXDE):
         self.lags = lags
         self.his = his
         self.his_span = his_span
+        self.init_y0(y0)
+
+    def init_y0(self, input):
+        self.y0 = input
 
     def handle(self, h, ts):
         pass
@@ -59,14 +63,20 @@ class BaseDDE(BaseXDE):
         # return dy * dt + y0
 
     def call_func(self, t, y0, lags, y_lags):
-        y0 = self.unflatten(y0, length=1)
+        # y0 = self.unflatten(y0, length=1)
         dy = self.func(t, y0, lags, y_lags)
-        dy = self.flatten(dy)
+        # dy = self.flatten(dy)
         return dy
 
     def init_lags(self):
         # TODO 不同时刻初始化不同lags
         pass
+
+    def flatten(self, input):
+        return input
+
+    def unflatten(self, input, length):
+        return input
 
 
 class HistoryIndex(autograd.PyLayer):
@@ -98,11 +108,8 @@ class HistoryIndex(autograd.PyLayer):
         else:
             raise NotImplementedError
 
-        batch_size, len_t, dims = his.shape  # [B, T, D]
-        axis_b = paddle.arange(batch_size)[:, None, None]
-        axis_index = lags[:, :, None].astype("int64")
-        axis_d = paddle.arange(dims)[None, None, :]
-        y_lags = his[axis_b, axis_index, axis_d]
+        y_lags = interp.evaluate(lags)
+        # y_lags = paddle.index_select(his, lags, axis=-2)
         assert isinstance(y_lags, paddle.Tensor)
         y_lags.stop_gradient = False
 
@@ -133,9 +140,10 @@ class HistoryIndex(autograd.PyLayer):
             grad_y_lags = paddle.grad(
                 outputs=[eval],
                 inputs=[y_lags],
-                grad_outputs=-grad_y,
+                grad_outputs=grad_y,
+                only_inputs=True,
                 allow_unused=True,
                 retain_graph=True,
             )[0]
-        return None, None, grad_y_lags * derivative_lags * 100000, None, None
+        return None, None, grad_y_lags * derivative_lags, None, None
         # return None, grad_y_lags * derivative_lags, None, None, None

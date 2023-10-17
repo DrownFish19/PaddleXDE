@@ -22,25 +22,27 @@ class BaseXDE(ABC, nn.Layer):
         self.var_nums = var_nums  # 返回值数量
 
         self.t_span = t_span
-        self.batch_size, self.pred_len = t_span.shape
+        self.pred_len = t_span.shape
 
-        self.init_y0(y0)  # shapes, numels, y0
+        # self.init_y0(y0)  # shapes, numels, y0
 
+    @abstractmethod
     def init_y0(self, input):
-        if isinstance(input, tuple) or isinstance(input, list):
-            self.shapes = [_tensor.shape for _tensor in input]
-            self.num_elements = [
-                paddle.numel(_tensor) / self.batch_size for _tensor in input
-            ]
-            self.y0 = paddle.concat(
-                [_tensor.reshape([self.batch_size, -1]) for _tensor in input], axis=-1
-            )  # [batch_size, -1]
-        elif isinstance(input, paddle.Tensor):
-            self.shapes = [input.shape]
-            self.num_elements = [paddle.numel(input) / self.batch_size]
-            self.y0 = input.reshape([self.batch_size, -1])
-        else:
-            raise NotImplementedError
+        # if isinstance(input, tuple) or isinstance(input, list):
+        #     self.shapes = [_tensor.shape for _tensor in input]
+        #     self.num_elements = [
+        #         paddle.numel(_tensor) / self.batch_size for _tensor in input
+        #     ]
+        #     self.y0 = paddle.concat(
+        #         [_tensor.reshape([self.batch_size, -1]) for _tensor in input], axis=-1
+        #     )  # [batch_size, -1]
+        # elif isinstance(input, paddle.Tensor):
+        #     self.shapes = [input.shape]
+        #     self.num_elements = [paddle.numel(input) / self.batch_size]
+        #     self.y0 = input.reshape([self.batch_size, -1])
+        # else:
+        #     raise NotImplementedError
+        raise NotImplementedError
 
     @abstractmethod
     def handle(self, h, ts):
