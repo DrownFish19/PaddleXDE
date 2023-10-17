@@ -15,10 +15,10 @@ class TestFixedSolversConstantForODE(unittest.TestCase):
             ode="constant",
             reverse=False,
         )
-        self.f = f
-        self.y0 = y0
-        self.t = t
-        self.sol = sol
+        self.f = f  # paddle model
+        self.y0 = y0  # [B, D]
+        self.t = t  # [T]
+        self.sol = sol  # [B, T, D]
 
         self.xdeints = [odeint, odeint_adjoint]
         self.solvers = [Euler, Midpoint, RK4, AdamsBashforthMoulton]
