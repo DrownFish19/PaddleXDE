@@ -37,7 +37,7 @@ if __name__ == "__main__":
     pred_len = demo_utils.args.pred_len
     func = ODEFunc()
     optimizer = paddle.optimizer.RMSProp(
-        parameters=func.parameters(), learning_rate=1e-3
+        parameters=func.parameters(), learning_rate=1e-4
     )
 
     stop = False

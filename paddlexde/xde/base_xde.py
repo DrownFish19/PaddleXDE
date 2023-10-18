@@ -26,6 +26,10 @@ class BaseXDE(ABC, nn.Layer):
 
         # self.init_y0(y0)  # shapes, numels, y0
 
+    def method(self):
+        print(f"current method is {self.name}.")
+        return self.name
+
     @abstractmethod
     def init_y0(self, input):
         # if isinstance(input, tuple) or isinstance(input, list):
@@ -76,23 +80,16 @@ class BaseXDE(ABC, nn.Layer):
         """
         raise NotImplementedError
 
-    def format(self, sol):
-        # [pred_len, batch_size, D]
-        sol = self.unflatten(sol, self.pred_len)
-        sol = paddle.transpose(sol, perm=[1, 0, 2])
-        return sol
-
-    def method(self):
-        print(f"current method is {self.name}.")
-        return self.name
-
-    @abstractmethod
     def unflatten(self, input, length):
         raise NotImplementedError
 
-    @abstractmethod
     def flatten(self, input):
         raise NotImplementedError
+
+    def format(self, sol):
+        # [pred_len, batch_size, D]
+        sol = paddle.transpose(sol, perm=[1, 0, 2])
+        return sol
 
     @abstractmethod
     def call_func(self, **kwargs):

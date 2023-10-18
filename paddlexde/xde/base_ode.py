@@ -49,21 +49,14 @@ class BaseODE(BaseXDE):
         return dy
 
     def fuse(self, dy, dt, y0):
-        # 测试是否存在振动
-        y = dy * dt + y0
-        _lambda = 0.001
-        return (dy - _lambda * y) * dt + y0
+        # 增加负反馈，减少振动，加快收敛
+        # y = dy * dt + y0
+        # _lambda = 0.001
+        # return (dy - _lambda * y) * dt + y0
 
-        # return dy * dt + y0
+        # 原始写法
+        return dy * dt + y0
 
     def call_func(self, t, y0):
-        y0 = self.unflatten(y0, length=1)
         dy = self.func(t, y0)
-        dy = self.flatten(dy)
         return dy
-
-    def unflatten(self, input, length):
-        return input
-
-    def flatten(self, input):
-        return input
