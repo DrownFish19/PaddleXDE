@@ -21,7 +21,7 @@ class CorrSTN(nn.Layer):
         )
 
         self.encode_temporal_position = TemporalPositionalEmbedding(
-            training_args, max_len=max(training_args.his_len, 12 * 24 * 7)
+            training_args, max_len=training_args.his_len
         )
         self.decode_temporal_position = TemporalPositionalEmbedding(
             training_args, max_len=training_args.tgt_len

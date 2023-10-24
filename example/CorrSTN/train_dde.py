@@ -10,7 +10,7 @@ from args import args
 from corrstn import CorrSTN
 from dataset import TrafficFlowDataset
 from paddle.io import DataLoader
-from paddle.nn.initializer import KaimingNormal, XavierUniform
+from paddle.nn.initializer import Constant, XavierUniform
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from utils import (
     CosineAnnealingWithWarmupDecay,
@@ -24,7 +24,7 @@ from utils import (
 from paddlexde.functional import ddeint
 from paddlexde.solver.fixed_solver import RK4
 
-# paddle.set_flags({'FLAGS_cudnn_deterministic': True})
+paddle.set_flags({"FLAGS_cudnn_deterministic": True})
 
 
 def amp_guard_context(fp16=False):
@@ -146,7 +146,7 @@ class Trainer:
         sc_matrix = np.load(self.training_args.sc_path)[0, :, :]
         sc_matrix = paddle.to_tensor(norm_adj_matrix(sc_matrix), default_dtype)
 
-        nn.initializer.set_global_initializer(XavierUniform(), KaimingNormal())
+        nn.initializer.set_global_initializer(XavierUniform(), Constant(value=0.0))
 
         self.net = CorrSTN(
             self.training_args,
