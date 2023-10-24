@@ -1,7 +1,7 @@
 import paddle
 import paddle.nn as nn
+from demo_utils import DemoUtils
 
-from example.demo_utils import DemoUtils
 from paddlexde.functional import odeint, odeint_adjoint
 from paddlexde.solver.fixed_solver import RK4
 
@@ -37,7 +37,7 @@ if __name__ == "__main__":
     pred_len = demo_utils.args.pred_len
     func = ODEFunc()
     optimizer = paddle.optimizer.RMSProp(
-        parameters=func.parameters(), learning_rate=1e-4
+        parameters=func.parameters(), learning_rate=1e-3
     )
 
     stop = False

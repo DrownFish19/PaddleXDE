@@ -179,21 +179,16 @@ class TrafficFlowDataset(Dataset):
         tgt_begin = his_end
         tgt_end = tgt_begin + self.training_args.tgt_len
 
+        valid = True
         if "HZME" in self.training_args.dataset_name:
-            if tgt_begin % 288 < 72:
-                offset = 72
-                his_begin += offset
-                his_end += offset
-                tgt_begin += offset
-                tgt_end += offset
-
-        # print(self.data_type, his_begin, his_end, tgt_begin, tgt_end)
+            if tgt_begin % 288 < 72 or tgt_end % 288 < 72:
+                valid = False
 
         # [N, T, F]
         his = self.data[:, his_begin:his_end, :]
         tgt = self.data[:, tgt_begin:tgt_end, :]
 
-        return his, tgt
+        return his, tgt, valid
 
     def __len__(self):
         if self.data_type == "train":
@@ -223,9 +218,29 @@ if __name__ == "__main__":
     val_dataset = TrafficFlowDataset(args, "val")
     test_dataset = TrafficFlowDataset(args, "test")
 
-    traing_dataloader = DataLoader(train_dataset, batch_size=10, shuffle=False)
-    val_dataloader = DataLoader(val_dataset, batch_size=10, shuffle=False)
-    test_dataloader = DataLoader(test_dataset, batch_size=10, shuffle=False)
+    def collate_func(batch_data):
+        src_list, tgt_list = [], []
+
+        for item in batch_data:
+            if item[2]:
+                src_list.append(item[0])
+                tgt_list.append(item[1])
+
+        if len(src_list) == 0:
+            src_list.append(item[0])
+            tgt_list.append(item[1])
+
+        return paddle.stack(src_list), paddle.stack(tgt_list)
+
+    traing_dataloader = DataLoader(
+        train_dataset, batch_size=10, shuffle=False, collate_fn=collate_func
+    )
+    val_dataloader = DataLoader(
+        val_dataset, batch_size=10, shuffle=False, collate_fn=collate_func
+    )
+    test_dataloader = DataLoader(
+        test_dataset, batch_size=10, shuffle=False, collate_fn=collate_func
+    )
 
     print(test_dataloader[0])
 

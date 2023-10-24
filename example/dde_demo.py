@@ -1,7 +1,7 @@
 import paddle
 import paddle.nn as nn
+from demo_utils import DemoUtils, SimpleDemoData
 
-from example.demo_utils import DemoUtils, SimpleDemoData
 from paddlexde.functional import ddeint, ddeint_adjoint
 from paddlexde.solver.fixed_solver import RK4
 
@@ -21,6 +21,7 @@ class DDEDataset(SimpleDemoData):
     def __getitem__(self, idx):
         his = self.true_y[idx : idx + self.his_len, :]
         his_span = self.t_span[idx : idx + self.his_len]
+        # his_span = paddle.arange(self.his_len)
 
         return super().__getitem__(idx + self.his_len) + (his, his_span)
 
@@ -92,7 +93,7 @@ if __name__ == "__main__":
             # batch_y        : [B, T, D], T is pred_len
             # batch_his      : [B, T, D], T is his_len
             # his_span       : [T], T is his_len
-            print(lags.numpy())
+            # print(lags.numpy())
             t_span = paddle.linspace(0.0, 25.0, demo_utils.args.data_len)[:pred_len]
             his_span = paddle.arange(his_len)
             pred_y = xdeint(

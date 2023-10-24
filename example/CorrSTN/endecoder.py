@@ -2,6 +2,14 @@ import paddle.nn as nn
 from utils import clones
 
 
+class PPLayerNorm(nn.Layer):
+    def __init__(self, size):
+        super(PPLayerNorm, self).__init__()
+
+    def forward(self, x):
+        return x
+
+
 class SublayerConnection(nn.Layer):
     """
     A residual connection followed by a layer norm
@@ -13,7 +21,7 @@ class SublayerConnection(nn.Layer):
         self.use_layer_norm = use_layer_norm
         self.dropout = nn.Dropout(dropout)
         if self.use_layer_norm:
-            self.norm = nn.LayerNorm(size)
+            self.norm = nn.LayerNorm(size, weight_attr=False, bias_attr=False)
 
     def forward(self, x, sublayer):
         """
@@ -76,7 +84,7 @@ class Encoder(nn.Layer):
         """
         super(Encoder, self).__init__()
         self.layers = clones(layer, n)
-        self.norm = nn.LayerNorm(layer.size)
+        self.norm = nn.LayerNorm(layer.size, weight_attr=False, bias_attr=False)
 
     def forward(self, x):
         """
@@ -134,7 +142,7 @@ class Decoder(nn.Layer):
     def __init__(self, layer, n):
         super(Decoder, self).__init__()
         self.layers = clones(layer, n)
-        self.norm = nn.LayerNorm(layer.size)
+        self.norm = nn.LayerNorm(layer.size, weight_attr=False, bias_attr=False)
 
     def forward(self, x, memory):
         """
