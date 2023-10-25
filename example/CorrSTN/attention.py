@@ -125,6 +125,7 @@ class MultiHeadAttentionAwareTemporalContext(nn.Layer):
                 args.d_model,
                 (1, args.kernel_size),
                 padding=(0, self.padding_1DConv),
+                bias_attr=True,
             )
         else:
             self.query_conv = nn.Conv2D(
@@ -132,6 +133,7 @@ class MultiHeadAttentionAwareTemporalContext(nn.Layer):
                 args.d_model,
                 (1, args.kernel_size),
                 padding=(0, self.padding_causal),
+                bias_attr=True,
             )
 
         if key_conv_type == "1DConv":
@@ -140,6 +142,7 @@ class MultiHeadAttentionAwareTemporalContext(nn.Layer):
                 args.d_model,
                 (1, args.kernel_size),
                 padding=(0, self.padding_1DConv),
+                bias_attr=True,
             )
         else:
             self.key_conv = nn.Conv2D(
@@ -147,6 +150,7 @@ class MultiHeadAttentionAwareTemporalContext(nn.Layer):
                 args.d_model,
                 (1, args.kernel_size),
                 padding=(0, self.padding_causal),
+                bias_attr=True,
             )
 
         self.dropout = nn.Dropout(p=args.dropout)

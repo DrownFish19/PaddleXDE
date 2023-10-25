@@ -289,7 +289,7 @@ class Trainer:
                 best_epoch = epoch
                 self.logger.info(f"best_epoch: {best_epoch}")
                 self.logger.info(f"eval_loss: {eval_loss}")
-                # self.compute_test_loss()
+                self.compute_test_loss()
                 # save parameters
                 # params_filename = os.path.join(self.save_path, f"epoch_{epoch}.params")
                 params_filename = os.path.join(self.save_path, "epoch_best.params")
@@ -392,9 +392,9 @@ class Trainer:
 
     def eval_one_step(self, src, tgt):
         self.net.eval()
-        encoder_input = paddle.index_select(src, self.encoder_idx, axis=2)
         with amp_guard_context(self.training_args.fp16):
-            decoder_start_inputs = encoder_input[:, :, -1:, :]
+            encoder_input = paddle.index_select(src, self.encoder_idx, axis=2)
+            decoder_start_inputs = src[:, :, -1:, :]
             decoder_input_list = [decoder_start_inputs]
 
             encoder_output = self.net.encode(encoder_input, self.encoder_idx)
@@ -410,9 +410,9 @@ class Trainer:
 
     def test_one_step(self, src, tgt):
         self.net.eval()
-        encoder_input = paddle.index_select(src, self.encoder_idx, axis=2)
         with amp_guard_context(self.training_args.fp16):
-            decoder_start_inputs = encoder_input[:, :, -1:, :]
+            encoder_input = paddle.index_select(src, self.encoder_idx, axis=2)
+            decoder_start_inputs = src[:, :, -1:, :]
             decoder_input_list = [decoder_start_inputs]
 
             encoder_output = self.net.encode(encoder_input, self.encoder_idx)
