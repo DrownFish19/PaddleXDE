@@ -126,12 +126,12 @@ class Trainer:
         if self.training_args.his_len >= 288:
             self.fix_day = paddle.arange(
                 start=self.training_args.his_len - 288,
-                end=self.training_args.his_len - 288 + 6,
+                end=self.training_args.his_len - 288 + 12,
             )
             self.encoder_idx.append(self.fix_day)
         if self.training_args.his_len >= 12:
             self.fix_hour = paddle.arange(
-                start=self.training_args.his_len - 6,
+                start=self.training_args.his_len,
                 end=self.training_args.his_len,
             )
             self.encoder_idx.append(self.fix_hour)
