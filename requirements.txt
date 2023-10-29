@@ -1,4 +1,6 @@
-numpy
+paddle
 boltons
 trampoline
 matplotlib
+scikit-learn
+pandas
