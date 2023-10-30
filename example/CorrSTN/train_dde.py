@@ -22,7 +22,7 @@ from utils import (
 )
 
 from paddlexde.functional import ddeint
-from paddlexde.solver.fixed_solver import RK4
+from paddlexde.solver.fixed_solver import Euler
 
 
 def amp_guard_context(fp16=False):
@@ -366,7 +366,7 @@ class Trainer:
                     lags=self.encoder_idx,
                     his=src,
                     his_span=paddle.arange(self.training_args.his_len),
-                    solver=RK4,
+                    solver=Euler,
                 )
                 preds = preds[:, :, -self.training_args.tgt_len :, :]
 
@@ -377,17 +377,21 @@ class Trainer:
                 y0 = [B,N,1,D]
                 [B,N,1,D] -> [B,N,T,D], T=tgt_len
                 """
-                y0 = src[:, :, -1:, :]
-                preds = ddeint(
-                    func=self.net,
-                    y0=y0,
-                    t_span=paddle.arange(self.training_args.tgt_len + 1),
-                    lags=self.encoder_idx,
-                    his=src,
-                    his_span=paddle.arange(self.training_args.his_len),
-                    solver=RK4,
-                )
-                preds = preds[:, :, 1:, :]
+                y_init = src[:, :, -1:, :]
+                y0 = y_init
+                for i in range(self.training_args.tgt_len):
+                    preds = ddeint(
+                        func=self.net,
+                        y0=y0,
+                        t_span=paddle.arange(1 + 1),
+                        lags=self.encoder_idx,
+                        his=src,
+                        his_span=paddle.arange(self.training_args.his_len),
+                        solver=Euler,
+                    )
+                    pred_len = y0.shape[-2]
+                    preds = preds[:, :, -pred_len:, :]
+                    y0 = paddle.concat([y_init, preds], axis=-2)
 
             # decoder_output = paddle.where(tgt == -1, tgt, decoder_output)
             loss = self.criterion1(preds, tgt)
@@ -407,17 +411,21 @@ class Trainer:
     def eval_one_step(self, src, tgt):
         self.net.eval()
         with amp_guard_context(self.training_args.fp16):
-            y0 = src[:, :, -1:, :]
-            preds = ddeint(
-                func=self.net,
-                y0=y0,
-                t_span=paddle.arange(self.training_args.tgt_len + 1),
-                lags=self.encoder_idx,
-                his=src,
-                his_span=paddle.arange(self.training_args.his_len),
-                solver=RK4,
-            )
-            preds = preds[:, :, 1:, :]
+            y_init = src[:, :, -1:, :]
+            y0 = y_init
+            for i in range(self.training_args.tgt_len):
+                preds = ddeint(
+                    func=self.net,
+                    y0=y0,
+                    t_span=paddle.arange(1 + 1),
+                    lags=self.encoder_idx,
+                    his=src,
+                    his_span=paddle.arange(self.training_args.his_len),
+                    solver=Euler,
+                )
+                pred_len = y0.shape[-2]
+                preds = preds[:, :, -pred_len:, :]
+                y0 = paddle.concat([y_init, preds], axis=-2)
 
             loss = self.criterion1(preds, tgt)
 
@@ -426,17 +434,21 @@ class Trainer:
     def test_one_step(self, src, tgt):
         self.net.eval()
         with amp_guard_context(self.training_args.fp16):
-            y0 = src[:, :, -1:, :]
-            preds = ddeint(
-                func=self.net,
-                y0=y0,
-                t_span=paddle.arange(self.training_args.tgt_len + 1),
-                lags=self.encoder_idx,
-                his=src,
-                his_span=paddle.arange(self.training_args.his_len),
-                solver=RK4,
-            )
-            preds = preds[:, :, 1:, :]
+            y_init = src[:, :, -1:, :]
+            y0 = y_init
+            for i in range(self.training_args.tgt_len):
+                preds = ddeint(
+                    func=self.net,
+                    y0=y0,
+                    t_span=paddle.arange(1 + 1),
+                    lags=self.encoder_idx,
+                    his=src,
+                    his_span=paddle.arange(self.training_args.his_len),
+                    solver=Euler,
+                )
+                pred_len = y0.shape[-2]
+                preds = preds[:, :, -pred_len:, :]
+                y0 = paddle.concat([y_init, preds], axis=-2)
 
             loss = self.criterion1(preds, tgt)
 
