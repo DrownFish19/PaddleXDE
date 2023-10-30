@@ -22,9 +22,7 @@ from utils import (
 )
 
 from paddlexde.functional import ddeint
-from paddlexde.solver.fixed_solver import RK4
-
-paddle.set_flags({"FLAGS_cudnn_deterministic": True})
+from paddlexde.solver.fixed_solver import Euler
 
 
 def amp_guard_context(fp16=False):
@@ -230,25 +228,25 @@ class Trainer:
             drop_last=False,
         )
         self.train_dataloader = DataLoader(
-            self.train_dataset, batch_sampler=train_sampler, num_workers=2
+            self.train_dataset, batch_sampler=train_sampler, num_workers=12
         )
         eval_sampler = DistributedBatchSampler(
             self.val_dataset,
-            batch_size=self.training_args.batch_size * 32,
+            batch_size=self.training_args.batch_size,
             shuffle=False,
             drop_last=False,
         )
         self.eval_dataloader = DataLoader(
-            self.val_dataset, batch_sampler=eval_sampler, num_workers=2
+            self.val_dataset, batch_sampler=eval_sampler, num_workers=12
         )
         test_sampler = DistributedBatchSampler(
             self.test_dataset,
-            batch_size=self.training_args.batch_size * 32,
+            batch_size=self.training_args.batch_size,
             shuffle=False,
             drop_last=False,
         )
         self.test_dataloader = DataLoader(
-            self.test_dataset, batch_sampler=test_sampler, num_workers=2
+            self.test_dataset, batch_sampler=test_sampler, num_workers=12
         )
 
     def train(self):
@@ -275,7 +273,7 @@ class Trainer:
             for batch_index, batch_data in enumerate(self.train_dataloader):
                 src, tgt = batch_data
                 _, training_loss = self.train_one_step(src, tgt)
-                # self.logger.info(f"training_loss: {training_loss.numpy()}")
+                self.logger.info(f"training_loss: {training_loss.numpy()}")
                 epoch_step += 1
                 global_step += 1
             self.logger.info(f"learning_rate: {self.optimizer.get_lr()}")
@@ -356,24 +354,21 @@ class Trainer:
                     [src[:, :, -1:, :], tgt[:, :, :-1, :]], axis=-2
                 )
                 decoder_output = self.net(
-                    src=encoder_input, src_idx=self.encoder_idx, tgt=decoder_input
+                    self.encoder_idx, encoder_input, None, decoder_input
                 )
             else:
                 # 此处修改为使用ddeint进行计算
-                # encoder_output = self.net.encode(encoder_input, self.encoder_idx)
-
                 decoder_start_inputs = encoder_input[:, :, -1:, :]
-                ddeint(
+                decoder_output = ddeint(
                     func=self.net,
                     y0=decoder_start_inputs,
-                    t_span=paddle.arange(self.trainging_args.pred_len),
+                    t_span=paddle.arange(self.training_args.tgt_len + 1),
                     lags=self.encoder_idx,
                     his=src,
-                    his_span=paddle.arange(self.training_args.his_len).expand(
-                        [src.shape[0], -1]
-                    ),
-                    solver=RK4,
+                    his_span=paddle.arange(self.training_args.his_len),
+                    solver=Euler,
                 )
+                decoder_output = decoder_output[:, :, 1:, :]
 
             # decoder_output = paddle.where(tgt == -1, tgt, decoder_output)
             loss = self.criterion1(decoder_output, tgt)
@@ -397,11 +392,11 @@ class Trainer:
             decoder_start_inputs = src[:, :, -1:, :]
             decoder_input_list = [decoder_start_inputs]
 
-            encoder_output = self.net.encode(encoder_input, self.encoder_idx)
+            encoder_output = self.net.encode(self.encoder_idx, encoder_input)
 
             for step in range(self.training_args.tgt_len):
                 decoder_inputs = paddle.concat(decoder_input_list, axis=2)
-                decoder_output = self.net.decode(decoder_inputs, encoder_output)
+                decoder_output = self.net.decode(encoder_output, None, decoder_inputs)
                 decoder_input_list = [decoder_start_inputs, decoder_output]
 
             loss = self.criterion1(decoder_output, tgt)
@@ -415,11 +410,11 @@ class Trainer:
             decoder_start_inputs = src[:, :, -1:, :]
             decoder_input_list = [decoder_start_inputs]
 
-            encoder_output = self.net.encode(encoder_input, self.encoder_idx)
+            encoder_output = self.net.encode(self.encoder_idx, encoder_input)
 
             for step in range(self.training_args.tgt_len):
                 decoder_inputs = paddle.concat(decoder_input_list, axis=2)
-                decoder_output = self.net.decode(decoder_inputs, encoder_output)
+                decoder_output = self.net.decode(encoder_output, None, decoder_inputs)
                 decoder_input_list = [decoder_start_inputs, decoder_output]
 
             loss = self.criterion1(decoder_output, tgt)

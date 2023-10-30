@@ -23,7 +23,7 @@ class InterpolationBase(nn.Layer, metaclass=abc.ABCMeta):
                 series.shape[-2],
                 series.shape[-2] + 1,
                 dtype=self.default_type,
-            )  # [B, T]
+            )  # [T]
         series = paddle.cast(series, dtype=self.default_type)
         t = paddle.cast(t, dtype=self.default_type)
 
@@ -35,14 +35,6 @@ class InterpolationBase(nn.Layer, metaclass=abc.ABCMeta):
         self._series_arr = series_arr
         self._series = series
         self._derivs = derivs
-
-        if len(series.shape) == 2:
-            self._seq_len, self._dims = series.shape
-            self._batch_size = None
-        elif len(series.shape) == 3:
-            self._batch_size, self._seq_len, self._dims = series.shape
-        else:
-            raise ValueError
 
     @property
     def grid_points(self):

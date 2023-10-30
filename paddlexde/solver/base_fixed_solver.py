@@ -61,6 +61,7 @@ class FixedSolver(metaclass=abc.ABCMeta):
 
         self.move = self.xde.move
         self.fuse = self.xde.fuse
+        self.on_integrate_step_end = self.xde.on_integrate_step_end
 
     @staticmethod
     def _grid_constructor_from_step_size(step_size):
@@ -94,7 +95,7 @@ class FixedSolver(metaclass=abc.ABCMeta):
 
         :param t0: [1]
         :param t1: [1]
-        :param y0: [B, D]
+        :param y0: [B, 1, D]
         :return:
         """
         raise NotImplementedError
@@ -118,10 +119,8 @@ class FixedSolver(metaclass=abc.ABCMeta):
         assert paddle.equal_all(time_grid[0], t_span[0])
         assert paddle.equal_all(time_grid[-1], t_span[-1])
 
-        # sol solution [pred_len, batch_size, dims]
-        sol = paddle.empty(shape=[pred_len] + self.y0.shape, dtype=self.y0.dtype)
-        sol[0] = self.y0
-
+        # sol solution pred_len * [batch_size, 1, dims]
+        sol = [self.y0]
         y0 = self.y0
 
         for i in range(1, pred_len):
@@ -130,17 +129,18 @@ class FixedSolver(metaclass=abc.ABCMeta):
 
             # while j < pred_len and paddle.greater_equal(t1, t_span[..., j]):
             if self.interp == "linear":
-                sol[i] = linear_interp(t0, t1, y0, y1, t_span[i : i + 1])
+                sol.append(linear_interp(t0, t1, y0, y1, t_span[i : i + 1]))
             elif self.interp == "cubic":
                 y2, dy1 = self.step(t1, t1, y1)
-                sol[i] = cubic_hermite_interp(
-                    t0, y0, dy0, t1, y1, dy1, t_span[i : i + 1]
+                sol.append(
+                    cubic_hermite_interp(t0, y0, dy0, t1, y1, dy1, t_span[i : i + 1])
                 )
             else:
                 raise ValueError(f"Unknown interpolation method {self.interp}")
 
             y0 = y1
 
+        sol = paddle.concat(sol, axis=-2)
         return sol
 
     def rk4_step_func(self, t0, t1, y0, f0=None):

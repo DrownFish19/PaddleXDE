@@ -83,23 +83,23 @@ class CorrSTN(nn.Layer):
             training_args.d_model, training_args.decoder_output_size
         )
 
-    def encode(self, src, lookup_index):
+    def encode(self, src_idx, src):
         src_dense = self.encoder_dense(src)
-        src_tp_embedding = self.encode_temporal_position(src_dense, lookup_index)
+        src_tp_embedding = self.encode_temporal_position(src_dense, src_idx)
         src_sp_embedding = self.encode_spatial_position(src_tp_embedding)
         encoder_output = self.encoder(src_sp_embedding)
         return encoder_output
 
-    def decode(self, tgt, encoder_output):
+    def decode(self, encoder_output, tgt_idx=None, tgt=None):
         tgt_dense = self.decoder_dense(tgt)
-        tgt_tp_embedding = self.decode_temporal_position(tgt_dense)
+        tgt_tp_embedding = self.decode_temporal_position(tgt_dense, tgt_idx)
         tgt_sp_embedding = self.decode_spatial_position(tgt_tp_embedding)
         decoder_output = self.decoder(x=tgt_sp_embedding, memory=encoder_output)
         return self.generator(decoder_output)
 
-    def forward(self, src, src_idx, tgt):
-        encoder_output = self.encode(src, src_idx)
-        output = self.decode(tgt, encoder_output)
+    def forward(self, src_idx, src, tgt_idx=None, tgt=None):
+        encoder_output = self.encode(src_idx, src)
+        output = self.decode(encoder_output, tgt_idx, tgt)
         return output
 
 
@@ -128,4 +128,4 @@ if __name__ == "__main__":
     his, tgt = next(iter(train_dataloader))
     his_index = paddle.randint(shape=[36], high=his.shape[-2], low=0)
     his_input = paddle.index_select(his, his_index, axis=-2)
-    output = model(his_input, his_index, tgt)
+    output = model(his_index, his_input, None, tgt)

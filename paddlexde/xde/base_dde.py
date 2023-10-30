@@ -52,7 +52,7 @@ class BaseDDE(BaseXDE):
 
         # y_lags [B, T, D]  T是选择后的序列长度
 
-        dy = self.call_func(t0, y0, self.lags, self.y_lags)
+        dy = self.func(self.lags, self.y_lags, t0, y0)
         return dy
 
     def fuse(self, dy, dt, y0):
@@ -77,6 +77,9 @@ class BaseDDE(BaseXDE):
 
     def unflatten(self, input, length):
         return input
+
+    def on_integrate_step_end(self, y0=None, y1=None, t0=None, t1=None):
+        return super().on_integrate_step_end(y0, y1, t0, t1)
 
 
 class HistoryIndex(autograd.PyLayer):

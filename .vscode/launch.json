@@ -70,5 +70,19 @@
                 "PYTHONPATH": "${workspaceFolder}",
             }
         },
+        {
+            "name": "example_CorrSTN_ddeint",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/example/CorrSTN/train_dde.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [],
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0",
+                "PYTHONPATH": "${workspaceFolder}",
+            }
+        },
+
     ]
 }
