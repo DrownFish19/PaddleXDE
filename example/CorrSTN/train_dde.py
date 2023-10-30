@@ -22,7 +22,7 @@ from utils import (
 )
 
 from paddlexde.functional import ddeint
-from paddlexde.solver.fixed_solver import Euler
+from paddlexde.solver.fixed_solver import RK4
 
 
 def amp_guard_context(fp16=False):
@@ -100,14 +100,14 @@ class Trainer:
         )
         self.eval_dataloader = DataLoader(
             self.val_dataset,
-            batch_size=self.training_args.batch_size * 32,
+            batch_size=self.training_args.batch_size,
             shuffle=False,
             drop_last=False,
             collate_fn=collate_func,
         )
         self.test_dataloader = DataLoader(
             self.test_dataset,
-            batch_size=self.training_args.batch_size * 32,
+            batch_size=self.training_args.batch_size,
             shuffle=False,
             drop_last=False,
             collate_fn=collate_func,
@@ -273,7 +273,7 @@ class Trainer:
             for batch_index, batch_data in enumerate(self.train_dataloader):
                 src, tgt = batch_data
                 _, training_loss = self.train_one_step(src, tgt)
-                self.logger.info(f"training_loss: {training_loss.numpy()}")
+                # self.logger.info(f"training_loss: {training_loss.numpy()}")
                 epoch_step += 1
                 global_step += 1
             self.logger.info(f"learning_rate: {self.optimizer.get_lr()}")
@@ -346,32 +346,51 @@ class Trainer:
             _type_: _description_
         """
         self.net.train()
-        encoder_input = paddle.index_select(src, self.encoder_idx, axis=2)
 
         with amp_guard_context(self.training_args.fp16):
             if not self.finetune:
-                decoder_input = paddle.concat(
-                    [src[:, :, -1:, :], tgt[:, :, :-1, :]], axis=-2
+                """
+                using ddeint to predict the next 'one' step
+                set t_span=[0,1] to predict the next step
+                y0 = [B,N,tgt_len,D]
+                [B,N,T,D] -> [B,N,T,D], T=tgt_len
+                """
+                y0 = paddle.concat(
+                    [src[:, :, -1:, :], tgt[:, :, :-1, :]],
+                    axis=-2,
                 )
-                decoder_output = self.net(
-                    self.encoder_idx, encoder_input, None, decoder_input
-                )
-            else:
-                # 此处修改为使用ddeint进行计算
-                decoder_start_inputs = encoder_input[:, :, -1:, :]
-                decoder_output = ddeint(
+                preds = ddeint(
                     func=self.net,
-                    y0=decoder_start_inputs,
+                    y0=y0,
+                    t_span=paddle.arange(1 + 1),
+                    lags=self.encoder_idx,
+                    his=src,
+                    his_span=paddle.arange(self.training_args.his_len),
+                    solver=RK4,
+                )
+                preds = preds[:, :, -self.training_args.tgt_len :, :]
+
+            else:
+                """
+                using ddeint to predict the next 'tgt_len' step
+                set t_span=[0,1,...,tgt_len] to predict the next step
+                y0 = [B,N,1,D]
+                [B,N,1,D] -> [B,N,T,D], T=tgt_len
+                """
+                y0 = src[:, :, -1:, :]
+                preds = ddeint(
+                    func=self.net,
+                    y0=y0,
                     t_span=paddle.arange(self.training_args.tgt_len + 1),
                     lags=self.encoder_idx,
                     his=src,
                     his_span=paddle.arange(self.training_args.his_len),
-                    solver=Euler,
+                    solver=RK4,
                 )
-                decoder_output = decoder_output[:, :, 1:, :]
+                preds = preds[:, :, 1:, :]
 
             # decoder_output = paddle.where(tgt == -1, tgt, decoder_output)
-            loss = self.criterion1(decoder_output, tgt)
+            loss = self.criterion1(preds, tgt)
         if self.net.training:
             if self.training_args.fp16:
                 scaled = self.scaler.scale(loss)  # loss 缩放，乘以系数 loss_scaling
@@ -383,43 +402,45 @@ class Trainer:
                 loss.backward()
                 self.optimizer.step()
                 self.optimizer.clear_grad()
-        return decoder_output, loss
+        return preds, loss
 
     def eval_one_step(self, src, tgt):
         self.net.eval()
         with amp_guard_context(self.training_args.fp16):
-            encoder_input = paddle.index_select(src, self.encoder_idx, axis=2)
-            decoder_start_inputs = src[:, :, -1:, :]
-            decoder_input_list = [decoder_start_inputs]
+            y0 = src[:, :, -1:, :]
+            preds = ddeint(
+                func=self.net,
+                y0=y0,
+                t_span=paddle.arange(self.training_args.tgt_len + 1),
+                lags=self.encoder_idx,
+                his=src,
+                his_span=paddle.arange(self.training_args.his_len),
+                solver=RK4,
+            )
+            preds = preds[:, :, 1:, :]
 
-            encoder_output = self.net.encode(self.encoder_idx, encoder_input)
+            loss = self.criterion1(preds, tgt)
 
-            for step in range(self.training_args.tgt_len):
-                decoder_inputs = paddle.concat(decoder_input_list, axis=2)
-                decoder_output = self.net.decode(encoder_output, None, decoder_inputs)
-                decoder_input_list = [decoder_start_inputs, decoder_output]
-
-            loss = self.criterion1(decoder_output, tgt)
-
-        return decoder_output, loss
+        return preds, loss
 
     def test_one_step(self, src, tgt):
         self.net.eval()
         with amp_guard_context(self.training_args.fp16):
-            encoder_input = paddle.index_select(src, self.encoder_idx, axis=2)
-            decoder_start_inputs = src[:, :, -1:, :]
-            decoder_input_list = [decoder_start_inputs]
+            y0 = src[:, :, -1:, :]
+            preds = ddeint(
+                func=self.net,
+                y0=y0,
+                t_span=paddle.arange(self.training_args.tgt_len + 1),
+                lags=self.encoder_idx,
+                his=src,
+                his_span=paddle.arange(self.training_args.his_len),
+                solver=RK4,
+            )
+            preds = preds[:, :, 1:, :]
 
-            encoder_output = self.net.encode(self.encoder_idx, encoder_input)
+            loss = self.criterion1(preds, tgt)
 
-            for step in range(self.training_args.tgt_len):
-                decoder_inputs = paddle.concat(decoder_input_list, axis=2)
-                decoder_output = self.net.decode(encoder_output, None, decoder_inputs)
-                decoder_input_list = [decoder_start_inputs, decoder_output]
-
-            loss = self.criterion1(decoder_output, tgt)
-
-        return decoder_output, loss
+        return preds, loss
 
     def compute_eval_loss(self):
         with paddle.no_grad():
