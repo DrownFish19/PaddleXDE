@@ -104,6 +104,10 @@ class CorrSTN(nn.Layer):
 
 
 if __name__ == "__main__":
+    import os
+
+    # 将日志级别设置为6
+    os.environ["GLOG_v"] = "6"
     import numpy as np
     import paddle
     import paddle.nn as nn
@@ -112,6 +116,9 @@ if __name__ == "__main__":
     from paddle.io import DataLoader
     from paddle.nn.initializer import XavierUniform
     from utils import get_adjacency_matrix_2direction, norm_adj_matrix
+
+    from paddlexde.functional import ddeint
+    from paddlexde.solver import Euler
 
     default_dtype = paddle.get_default_dtype()
     adj_matrix, _ = get_adjacency_matrix_2direction(args.adj_path, 80)
@@ -123,9 +130,48 @@ if __name__ == "__main__":
     nn.initializer.set_global_initializer(XavierUniform(), XavierUniform())
     model = CorrSTN(args, adj_matrix, sc_matrix)
 
+    def collate_func(batch_data):
+        src_list, tgt_list = [], []
+
+        for item in batch_data:
+            if item[2]:
+                src_list.append(item[0])
+                tgt_list.append(item[1])
+
+        if len(src_list) == 0:
+            src_list.append(item[0])
+            tgt_list.append(item[1])
+
+        return paddle.stack(src_list), paddle.stack(tgt_list)
+
     train_dataset = TrafficFlowDataset(args, "train")
-    train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size)
-    his, tgt = next(iter(train_dataloader))
-    his_index = paddle.randint(shape=[36], high=his.shape[-2], low=0)
-    his_input = paddle.index_select(his, his_index, axis=-2)
-    output = model(his_index, his_input, None, tgt)
+    train_dataloader = DataLoader(
+        train_dataset, batch_size=args.batch_size, collate_fn=collate_func
+    )
+    src, tgt = next(iter(train_dataloader))
+    src_index = paddle.randint(shape=[12], high=src.shape[-2], low=0)
+    src_input = paddle.index_select(src, src_index, axis=-2)
+    decoder_input = paddle.concat([src[:, :, -1:, :], tgt[:, :, :-1, :]], axis=-2)
+
+    # 1. call model foreward  (choose 1 or 2)
+    preds = model(src_index, src_input, None, decoder_input)
+    preds.backward()
+
+    # 2. call ddeint (choose 1 or 2)
+    y0 = decoder_input
+    preds = ddeint(
+        func=model,
+        y0=y0,
+        t_span=paddle.arange(args.tgt_len + 1),
+        lags=src_index,
+        his=src,
+        his_span=paddle.arange(args.his_len),
+        solver=Euler,
+    )
+    preds = preds[:, :, -args.tgt_len :, :]
+    preds.backward()
+
+    from paddleviz.paddleviz.viz import make_graph
+
+    dot = make_graph(preds, dpi="600")
+    dot.render("viz-result.gv", format="png", view=False)
