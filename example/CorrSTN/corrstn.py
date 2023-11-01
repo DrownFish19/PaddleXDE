@@ -1,10 +1,17 @@
 from copy import deepcopy
 
-import paddle.nn as nn
+import paddle
 from attention import MultiHeadAttentionAwareTemporalContext
 from embedding import SpatialPositionalEmbedding, TemporalPositionalEmbedding
 from endecoder import Decoder, DecoderLayer, Encoder, EncoderLayer
 from graphconv import GCN, SpatialAttentionGCN
+from paddle import autograd, nn
+
+from paddlexde.interpolation.interpolate import (
+    BezierSpline,
+    CubicHermiteSpline,
+    LinearInterpolation,
+)
 
 
 class CorrSTN(nn.Layer):
@@ -103,13 +110,61 @@ class CorrSTN(nn.Layer):
         return output
 
 
+class DecoderIndex(autograd.PyLayer):
+    @staticmethod
+    def forward(ctx, lags, his, his_span, interp_method="cubic"):
+        """
+        计算给定输入序列的未来值，并返回计算结果。
+        传入lags, history,
+        计算序列位置对应位置的梯度, 并保存至backward
+
+        Args:
+            ctx (): 动态图计算上下文对象。
+            xde (): 未来值的输入序列, BaseXDE类型。
+            lags (paddle.Tensor): 用多少个过去的值来计算未来的这个值（未来值的滞后量）。
+            history (paddle.Tensor): 用于计算未来值的过去输入序列。
+            interp_method (str, optional): 插值方法，取值为 "linear"（线性插值）,"cubic"（三次样条插值）或 "bez"（贝塞尔插值）。默认为 "linear"。
+
+        Returns:
+            paddle.Tensor: 计算结果，形状为 [batch_size, len_t, dims]。
+
+        Raises:
+            NotImplementedError: 如果interp_method不是上述三种情况之一, 将抛出NotImplementedError异常。
+        """
+        with paddle.no_grad():
+            if interp_method == "linear":
+                interp = LinearInterpolation(his, his_span)
+            elif interp_method == "cubic":
+                interp = CubicHermiteSpline(his, his_span)
+            elif interp_method == "bez":
+                interp = BezierSpline(his, his_span)
+            else:
+                raise NotImplementedError
+
+            y_lags = interp.evaluate(lags)
+
+            derivative_lags = interp.derivative(lags)
+            ctx.save_for_backward(derivative_lags)
+
+        return y_lags
+
+    @staticmethod
+    def backward(ctx, grad_y):
+        # 计算history相应的梯度，并提取forward中保存的梯度，用于计算lag的梯度
+        # 在计算的过程中，无需更新history，仅更新lags即可
+        (derivative_lags,) = ctx.saved_tensor()
+        grad = grad_y * derivative_lags
+        grad = paddle.sum(grad, axis=[0, 1, 3])
+        return grad, None, None
+        # return None, grad_y_lags * derivative_lags, None, None, None
+
+
 if __name__ == "__main__":
     import os
 
     # 将日志级别设置为6
     os.environ["GLOG_v"] = "6"
     import numpy as np
-    import paddle
     import paddle.nn as nn
     from args import args
     from dataset import TrafficFlowDataset

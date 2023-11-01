@@ -73,10 +73,11 @@ class TemporalPositionalEmbedding(nn.Layer):
             # [B,N,T,D] + [1,1,T,D]
             x = x + paddle.index_select(self.pe, lookup_index, axis=-2)
         else:
-
+            if lookup_index.dtype != paddle.int64:
+                lookup_index = paddle.cast(lookup_index, dtype="int64")
             x = x + paddle.index_select(self.pe, lookup_index, axis=-2)
 
-        return self.dropout(x.detach())
+        return self.dropout(x)
 
 
 class TimeEmbedding:

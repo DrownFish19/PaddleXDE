@@ -25,17 +25,11 @@ class BaseDDE(BaseXDE):
         his: paddle.Tensor,
         his_span: paddle.Tensor,
     ):
-        # TODO 此处传入的数据值需要进行改变
-        # 如果lags不存在梯度值，则不需要进行初始化和更新，采取固定lags的形式
-        # 如果lags存在梯度，证明lags可以进行更新
-        # 如果lags为None，则选择动态初始化lags
         super(BaseDDE, self).__init__(name="DDE", var_nums=1, y0=y0, t_span=t_span)
 
         self.func = func
         self.lags = lags
-        self.y_lags = HistoryIndex.apply(
-            func=func, t0=t_span[0], y0=y0, lags=lags, his=his, his_span=his_span
-        )
+        self.y_lags = HistoryIndex.apply(lags=lags, his=his, his_span=his_span)
         self.his = his
         self.his_span = his_span
         self.init_y0(y0)
@@ -51,8 +45,7 @@ class BaseDDE(BaseXDE):
         # input_history = paddle.index_select(self.history, self.lags)
 
         # y_lags [B, T, D]  T是选择后的序列长度
-
-        dy = self.func(self.lags, self.y_lags, t0, y0)
+        dy = self.func(self.lags, self.y_lags, None, y0)
         return dy
 
     def fuse(self, dy, dt, y0):
@@ -83,7 +76,8 @@ class BaseDDE(BaseXDE):
 
 
 class HistoryIndex(autograd.PyLayer):
-    def forward(ctx, func, t0, y0, lags, his, his_span, interp_method="linear"):
+    @staticmethod
+    def forward(ctx, lags, his, his_span, interp_method="cubic"):
         """
         计算给定输入序列的未来值，并返回计算结果。
         传入lags, history,
@@ -113,38 +107,18 @@ class HistoryIndex(autograd.PyLayer):
                 raise NotImplementedError
 
             y_lags = interp.evaluate(lags)
+
             derivative_lags = interp.derivative(lags)
-
-            ctx.t0 = t0
-            ctx.y0 = y0
-            ctx.lags = lags
-            ctx.func = func
-
-            ctx.save_for_backward(y_lags, derivative_lags)
+            ctx.save_for_backward(derivative_lags)
 
         return y_lags
 
+    @staticmethod
     def backward(ctx, grad_y):
         # 计算history相应的梯度，并提取forward中保存的梯度，用于计算lag的梯度
         # 在计算的过程中，无需更新history，仅更新lags即可
-
-        t0 = ctx.t0
-        y0 = ctx.y0
-        lags = ctx.lags
-        func = ctx.func
-
-        y_lags, derivative_lags = ctx.saved_tensor()
-
-        _y_lags = y_lags.detach()
-        _y_lags = paddle.assign(y_lags)
-        _y_lags.stop_gradient = False
-
-        _lags = lags.detach()
-        _lags = paddle.assign(lags)
-
-        with paddle.set_grad_enabled(True):
-            output = func(t0, y0, _lags, _y_lags)
-        paddle.autograd.backward([output], [grad_y], True)
-
-        return None, None, _y_lags.grad * derivative_lags * 10000, None, None
+        (derivative_lags,) = ctx.saved_tensor()
+        grad = grad_y * derivative_lags
+        grad = paddle.sum(grad, axis=[0, 1, 3])
+        return grad, None, None
         # return None, grad_y_lags * derivative_lags, None, None, None

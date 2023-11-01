@@ -7,7 +7,7 @@ import paddle
 import paddle.nn as nn
 import paddle.optimizer as optim
 from args import args
-from corrstn import CorrSTN
+from corrstn import CorrSTN, DecoderIndex
 from dataset import TrafficFlowDataset
 from paddle.io import DataLoader
 from paddle.nn.initializer import Constant, XavierUniform
@@ -20,6 +20,7 @@ from utils import (
     masked_mape_np,
     norm_adj_matrix,
 )
+from visualdl import LogWriter
 
 from paddlexde.functional import ddeint
 from paddlexde.solver.fixed_solver import Euler
@@ -52,6 +53,7 @@ class Trainer:
         )
         os.makedirs(self.save_path, exist_ok=True)
         self.logger = Logger("CorrSTN", os.path.join(self.save_path, "log.txt"))
+        self.writer = LogWriter(logdir=os.path.join(self.save_path, "visualdl"))
 
         if training_args.start_epoch == 0:
             self.logger.info(f"create params directory {self.save_path}")
@@ -114,27 +116,53 @@ class Trainer:
         )
 
         # 保持输入序列长度为12
-        self.encoder_idx = []
+        encoder_idx = []
+        decoder_idx = []
+        # for week
         if self.training_args.his_len >= 2016:
             self.fix_week = paddle.arange(
                 start=self.training_args.his_len - 2016,
                 end=self.training_args.his_len - 2016 + 6,
             )
-            self.encoder_idx.append(self.fix_week)
+            encoder_idx.append(self.fix_week)
+        # for day
         if self.training_args.his_len >= 288:
             self.fix_day = paddle.arange(
                 start=self.training_args.his_len - 288,
                 end=self.training_args.his_len - 288 + 12,
             )
-            self.encoder_idx.append(self.fix_day)
+            encoder_idx.append(self.fix_day)
+        # for hour
         if self.training_args.his_len >= 12:
             self.fix_hour = paddle.arange(
-                start=self.training_args.his_len,
+                start=self.training_args.his_len - 12,
                 end=self.training_args.his_len,
             )
-            self.encoder_idx.append(self.fix_hour)
-        self.encoder_idx = paddle.concat(self.encoder_idx)
+            decoder_idx.append(self.fix_hour)
+        # concat all
+        encoder_idx = paddle.concat(encoder_idx)
+        decoder_idx = paddle.concat(decoder_idx)
+        if self.training_args.fp16:
+            self.encoder_idx = paddle.create_parameter(
+                shape=encoder_idx.shape, dtype="float16"
+            )
+            self.decoder_idx = paddle.create_parameter(
+                shape=decoder_idx.shape, dtype="float16"
+            )
+            self.encoder_idx.set_value(paddle.cast(encoder_idx, "float16"))
+            self.decoder_idx.set_value(paddle.cast(decoder_idx, "float16"))
+        else:
+            self.encoder_idx = paddle.create_parameter(
+                shape=encoder_idx.shape, dtype="float32"
+            )
+            self.decoder_idx = paddle.create_parameter(
+                shape=decoder_idx.shape, dtype="float32"
+            )
+            self.encoder_idx.set_value(paddle.cast(encoder_idx, "float32"))
+            self.decoder_idx.set_value(paddle.cast(decoder_idx, "float32"))
+
         self.logger.info(f"encoder_idx: {self.encoder_idx}")
+        self.logger.info(f"encoder_idx: {self.decoder_idx}")
 
     def _build_model(self):
         default_dtype = paddle.get_default_dtype()
@@ -151,6 +179,11 @@ class Trainer:
             adj_matrix=adj_matrix,
             sc_matrix=sc_matrix,
         )
+
+        if self.training_args.fp16:
+            self.net = paddle.amp.decorate(models=self.net, level="O2")
+            self.scaler = paddle.amp.GradScaler(init_loss_scaling=1024)
+
         if self.training_args.continue_training:
             # params_filename = os.path.join(
             #     self.save_path, f"epoch_{self.start_epoch}.params"
@@ -158,10 +191,6 @@ class Trainer:
             params_filename = os.path.join(self.save_path, "epoch_best.params")
             self.net.set_state_dict(paddle.load(params_filename))
             self.logger.info(f"load weight from: {params_filename}")
-
-        if self.training_args.fp16:
-            self.net = paddle.amp.decorate(models=self.net, level="O2")
-            self.scaler = paddle.amp.GradScaler(init_loss_scaling=1024)
 
         self.logger.info(self.net)
 
@@ -174,28 +203,28 @@ class Trainer:
             total_param += np.prod(self.net.state_dict()[param_tensor].shape)
         self.logger.info(f"Net's total params: {total_param}.")
 
-        self.criterion1 = nn.L1Loss()  # 定义损失函数
-        self.criterion2 = nn.MSELoss()  # 定义损失函数
+        self.criterion = nn.L1Loss()  # 定义损失函数
 
     def _build_optim(self):
         self.lr_scheduler = CosineAnnealingWithWarmupDecay(
-            max_lr=self.training_args.learning_rate,
-            min_lr=self.training_args.learning_rate * 0.1,
-            warmup_step=10,
-            decay_step=30,
+            max_lr=1, min_lr=0.1, warmup_step=20, decay_step=100
         )
 
-        # 定义优化器，传入所有网络参数
-        # self.optimizer = optim.AdamW(
-        #     parameters=self.net.parameters(),
-        #     learning_rate=self.lr_scheduler,
-        #     weight_decay=self.training_args.weight_decay,
-        #     multi_precision=True,
-        # )
+        parameters = [
+            {
+                "params": self.net.parameters(),
+                "learning_rate": self.training_args.learning_rate,
+            },
+            {
+                "params": [self.encoder_idx, self.decoder_idx],
+                "learning_rate": self.training_args.learning_rate * 0.1,
+            },
+        ]
 
+        # 定义优化器，传入所有网络参数
         self.optimizer = optim.Adam(
-            parameters=self.net.parameters(),
-            learning_rate=self.training_args.learning_rate,
+            parameters=parameters,
+            learning_rate=self.lr_scheduler,
             weight_decay=self.training_args.weight_decay,
             multi_precision=True,
         )
@@ -274,6 +303,11 @@ class Trainer:
                 src, tgt = batch_data
                 _, training_loss = self.train_one_step(src, tgt)
                 # self.logger.info(f"training_loss: {training_loss.numpy()}")
+                decoder_idx_dict = {
+                    str(i): self.decoder_idx[i].numpy()
+                    for i in range(len(self.decoder_idx))
+                }
+                self.writer.add_scalars("decoder_idx", decoder_idx_dict, global_step)
                 epoch_step += 1
                 global_step += 1
             self.logger.info(f"learning_rate: {self.optimizer.get_lr()}")
@@ -322,18 +356,14 @@ class Trainer:
 
         self.early_stopping.reset()
 
-        self.optimizer._learning_rate.max_lr = self.training_args.learning_rate * 0.1
-        self.optimizer._learning_rate.min_lr = self.training_args.learning_rate * 0.01
+        self.optimizer._learning_rate.max_lr = (
+            self.optimizer._learning_rate.max_lr * 0.1
+        )
+        self.optimizer._learning_rate.min_lr = (
+            self.optimizer._learning_rate.min_lr * 0.01
+        )
 
         self.finetune = True
-
-        self.encoder_idx.stop_gradient = False
-        self.optimizer_lags = optim.AdamW(
-            parameters=[self.encoder_idx],
-            learning_rate=10.0,
-            weight_decay=self.training_args.weight_decay,
-            multi_precision=True,
-        )
 
     def train_one_step(self, src, tgt):
         """_summary_
@@ -348,53 +378,26 @@ class Trainer:
         self.net.train()
 
         with amp_guard_context(self.training_args.fp16):
-            if not self.finetune:
-                """
-                using ddeint to predict the next 'one' step
-                set t_span=[0,1] to predict the next step
-                y0 = [B,N,tgt_len,D]
-                [B,N,T,D] -> [B,N,T,D], T=tgt_len
-                """
-                y0 = paddle.concat(
-                    [src[:, :, -1:, :], tgt[:, :, :-1, :]],
-                    axis=-2,
-                )
-                preds = ddeint(
-                    func=self.net,
-                    y0=y0,
-                    t_span=paddle.arange(1 + 1),
-                    lags=self.encoder_idx,
-                    his=src,
-                    his_span=paddle.arange(self.training_args.his_len),
-                    solver=Euler,
-                )
-                preds = preds[:, :, -self.training_args.tgt_len :, :]
+            # self.decoder_idx.stop_gradient= True
+            y0 = DecoderIndex.apply(
+                lags=self.decoder_idx,
+                his=src,
+                his_span=paddle.arange(self.training_args.his_len),
+            )
 
-            else:
-                """
-                using ddeint to predict the next 'tgt_len' step
-                set t_span=[0,1,...,tgt_len] to predict the next step
-                y0 = [B,N,1,D]
-                [B,N,1,D] -> [B,N,T,D], T=tgt_len
-                """
-                y_init = src[:, :, -1:, :]
-                y0 = y_init
-                for i in range(self.training_args.tgt_len):
-                    preds = ddeint(
-                        func=self.net,
-                        y0=y0,
-                        t_span=paddle.arange(1 + 1),
-                        lags=self.encoder_idx,
-                        his=src,
-                        his_span=paddle.arange(self.training_args.his_len),
-                        solver=Euler,
-                    )
-                    pred_len = y0.shape[-2]
-                    preds = preds[:, :, -pred_len:, :]
-                    y0 = paddle.concat([y_init, preds], axis=-2)
+            preds = ddeint(
+                func=self.net,
+                y0=y0,
+                t_span=paddle.arange(1 + 1),
+                lags=self.encoder_idx,
+                his=src,
+                his_span=paddle.arange(self.training_args.his_len),
+                solver=Euler,
+            )
+            pred_len = y0.shape[-2]
+            preds = preds[:, :, -pred_len:, :]
 
-            # decoder_output = paddle.where(tgt == -1, tgt, decoder_output)
-            loss = self.criterion1(preds, tgt)
+            loss = self.criterion(preds, tgt)
         if self.net.training:
             if self.training_args.fp16:
                 scaled = self.scaler.scale(loss)  # loss 缩放，乘以系数 loss_scaling
@@ -411,46 +414,48 @@ class Trainer:
     def eval_one_step(self, src, tgt):
         self.net.eval()
         with amp_guard_context(self.training_args.fp16):
-            y_init = src[:, :, -1:, :]
-            y0 = y_init
-            for i in range(self.training_args.tgt_len):
-                preds = ddeint(
-                    func=self.net,
-                    y0=y0,
-                    t_span=paddle.arange(1 + 1),
-                    lags=self.encoder_idx,
-                    his=src,
-                    his_span=paddle.arange(self.training_args.his_len),
-                    solver=Euler,
-                )
-                pred_len = y0.shape[-2]
-                preds = preds[:, :, -pred_len:, :]
-                y0 = paddle.concat([y_init, preds], axis=-2)
+            y0 = DecoderIndex.apply(
+                lags=self.decoder_idx,
+                his=src,
+                his_span=paddle.arange(self.training_args.his_len),
+            )
+            preds = ddeint(
+                func=self.net,
+                y0=y0,
+                t_span=paddle.arange(1 + 1),
+                lags=self.encoder_idx,
+                his=src,
+                his_span=paddle.arange(self.training_args.his_len),
+                solver=Euler,
+            )
+            pred_len = y0.shape[-2]
+            preds = preds[:, :, -pred_len:, :]
 
-            loss = self.criterion1(preds, tgt)
+            loss = self.criterion(preds, tgt)
 
         return preds, loss
 
     def test_one_step(self, src, tgt):
         self.net.eval()
         with amp_guard_context(self.training_args.fp16):
-            y_init = src[:, :, -1:, :]
-            y0 = y_init
-            for i in range(self.training_args.tgt_len):
-                preds = ddeint(
-                    func=self.net,
-                    y0=y0,
-                    t_span=paddle.arange(1 + 1),
-                    lags=self.encoder_idx,
-                    his=src,
-                    his_span=paddle.arange(self.training_args.his_len),
-                    solver=Euler,
-                )
-                pred_len = y0.shape[-2]
-                preds = preds[:, :, -pred_len:, :]
-                y0 = paddle.concat([y_init, preds], axis=-2)
+            y0 = DecoderIndex.apply(
+                lags=self.decoder_idx,
+                his=src,
+                his_span=paddle.arange(self.training_args.his_len),
+            )
+            preds = ddeint(
+                func=self.net,
+                y0=y0,
+                t_span=paddle.arange(1 + 1),
+                lags=self.encoder_idx,
+                his=src,
+                his_span=paddle.arange(self.training_args.his_len),
+                solver=Euler,
+            )
+            pred_len = y0.shape[-2]
+            preds = preds[:, :, -pred_len:, :]
 
-            loss = self.criterion1(preds, tgt)
+            loss = self.criterion(preds, tgt)
 
         return preds, loss
 
@@ -458,6 +463,8 @@ class Trainer:
         with paddle.no_grad():
             all_eval_loss = []  # 记录了所有batch的loss
             start_time = time()
+            # self.logger.info(f"self.encoder_idx:{self.encoder_idx}")
+            # self.logger.info(f"self.decoder_idx:{self.decoder_idx}")
             for batch_index, batch_data in enumerate(self.eval_dataloader):
                 src, tgt = batch_data
                 predict_output, eval_loss = self.eval_one_step(src, tgt)
