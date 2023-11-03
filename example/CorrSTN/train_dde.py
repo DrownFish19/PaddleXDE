@@ -122,11 +122,11 @@ class Trainer:
         if self.training_args.his_len >= 2016:
             self.fix_week = paddle.arange(
                 start=self.training_args.his_len - 2016,
-                end=self.training_args.his_len - 2016 + 6,
+                end=self.training_args.his_len - 2016 + 12,
             )
             encoder_idx.append(self.fix_week)
         # for day
-        if self.training_args.his_len >= 288:
+        elif self.training_args.his_len >= 288:
             self.fix_day = paddle.arange(
                 start=self.training_args.his_len - 288,
                 end=self.training_args.his_len - 288 + 12,
