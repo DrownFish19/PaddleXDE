@@ -2,11 +2,11 @@ import contextlib
 import os
 from time import time
 
+import args
 import numpy as np
 import paddle
 import paddle.nn as nn
 import paddle.optimizer as optim
-from args import args
 from corrstn import CorrSTN, DecoderIndex
 from dataset import TrafficFlowDataset
 from paddle.io import DataLoader
@@ -64,7 +64,10 @@ class Trainer:
         self.logger.info(f"save path  : {self.save_path}")
         self.logger.info(f"log  file  : {self.logger.log_file}")
 
-        self.logger.info(f"training_args  : {self.training_args}")
+        args_message = "\n".join(
+            [f"{k:<20}: {v}" for k, v in vars(training_args).items()]
+        )
+        self.logger.info(f"training_args  : \n{args_message}")
         self.finetune = False
         self.early_stopping = EarlyStopping(patience=training_args.patience, delta=0.0)
 
@@ -79,40 +82,26 @@ class Trainer:
         self.val_dataset = TrafficFlowDataset(self.training_args, "val")
         self.test_dataset = TrafficFlowDataset(self.training_args, "test")
 
-        def collate_func(batch_data):
-            src_list, tgt_list = [], []
-
-            for item in batch_data:
-                if item[2]:
-                    src_list.append(item[0])
-                    tgt_list.append(item[1])
-
-            if len(src_list) == 0:
-                src_list.append(item[0])
-                tgt_list.append(item[1])
-
-            return paddle.stack(src_list), paddle.stack(tgt_list)
-
         self.train_dataloader = DataLoader(
             self.train_dataset,
             batch_size=self.training_args.batch_size,
             shuffle=True,
             drop_last=True,
-            collate_fn=collate_func,
+            num_workers=4,
         )
         self.eval_dataloader = DataLoader(
             self.val_dataset,
             batch_size=self.training_args.batch_size,
             shuffle=False,
             drop_last=False,
-            collate_fn=collate_func,
+            num_workers=4,
         )
         self.test_dataloader = DataLoader(
             self.test_dataset,
             batch_size=self.training_args.batch_size,
             shuffle=False,
             drop_last=False,
-            collate_fn=collate_func,
+            num_workers=4,
         )
 
         # 保持输入序列长度为12
@@ -162,11 +151,13 @@ class Trainer:
             self.decoder_idx.set_value(paddle.cast(decoder_idx, "float32"))
 
         self.logger.info(f"encoder_idx: {self.encoder_idx}")
-        self.logger.info(f"encoder_idx: {self.decoder_idx}")
+        self.logger.info(f"decoder_idx: {self.decoder_idx}")
 
     def _build_model(self):
         default_dtype = paddle.get_default_dtype()
-        adj_matrix, _ = get_adjacency_matrix_2direction(self.training_args.adj_path, 80)
+        adj_matrix, _ = get_adjacency_matrix_2direction(
+            self.training_args.adj_path, self.training_args.num_nodes
+        )
         adj_matrix = paddle.to_tensor(norm_adj_matrix(adj_matrix), default_dtype)
 
         sc_matrix = np.load(self.training_args.sc_path)[0, :, :]
@@ -301,6 +292,8 @@ class Trainer:
             self.lr_scheduler.step()
             for batch_index, batch_data in enumerate(self.train_dataloader):
                 src, tgt = batch_data
+                src = paddle.cast(src, paddle.get_default_dtype())
+                tgt = paddle.cast(tgt, paddle.get_default_dtype())
                 _, training_loss = self.train_one_step(src, tgt)
                 # self.logger.info(f"training_loss: {training_loss.numpy()}")
                 decoder_idx_dict = {
@@ -467,6 +460,8 @@ class Trainer:
             # self.logger.info(f"self.decoder_idx:{self.decoder_idx}")
             for batch_index, batch_data in enumerate(self.eval_dataloader):
                 src, tgt = batch_data
+                src = paddle.cast(src, paddle.get_default_dtype())
+                tgt = paddle.cast(tgt, paddle.get_default_dtype())
                 predict_output, eval_loss = self.eval_one_step(src, tgt)
                 all_eval_loss.append(eval_loss.numpy())
 
@@ -482,6 +477,8 @@ class Trainer:
             start_time = time()
             for batch_index, batch_data in enumerate(self.test_dataloader):
                 src, tgt = batch_data
+                src = paddle.cast(src, paddle.get_default_dtype())
+                tgt = paddle.cast(tgt, paddle.get_default_dtype())
                 predict_output, _ = self.test_one_step(src, tgt)
 
                 preds.append(predict_output.detach().numpy())
@@ -528,6 +525,6 @@ class Trainer:
 
 
 if __name__ == "__main__":
-    trainer = Trainer(training_args=args)
+    trainer = Trainer(training_args=args.args)
     trainer.train()
     trainer.run_test()

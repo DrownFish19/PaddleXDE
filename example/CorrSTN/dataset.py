@@ -136,6 +136,7 @@ class TrafficFlowDataset(Dataset):
         # [T, N, D]
         # D=3 for PEMS04 and PEMS08, D=1 for others
         self.origin_data = np.load(training_args.data_path)["data"].transpose([1, 0, 2])
+        self.origin_data = self.origin_data[:, :, :1]
         self.num_nodes, self.seq_len, self.dims = self.origin_data.shape
 
         self.train_ratio, self.val_ratio, self.test_ratio = map(
@@ -163,34 +164,6 @@ class TrafficFlowDataset(Dataset):
         else:
             self.data = self.origin_data
 
-        self.data = paddle.to_tensor(self.data, dtype=paddle.get_default_dtype())
-
-    def __getitem__(self, index):
-
-        if self.data_type == "train":
-            index += 0
-        elif self.data_type == "val":
-            index += self.train_size - self.training_args.his_len
-        else:
-            index += self.train_size + self.val_size - self.training_args.his_len
-
-        his_begin = index
-        his_end = his_begin + self.training_args.his_len
-        tgt_begin = his_end
-        tgt_end = tgt_begin + self.training_args.tgt_len
-
-        valid = True
-        if "HZME" in self.training_args.dataset_name:
-            if tgt_begin % 288 < 72 or tgt_end % 288 < 72:
-                valid = False
-
-        # [N, T, F]
-        his = self.data[:, his_begin:his_end, :]
-        tgt = self.data[:, tgt_begin:tgt_end, :]
-
-        return his, tgt, valid
-
-    def __len__(self):
         if self.data_type == "train":
             data_len = (
                 self.train_size
@@ -202,7 +175,37 @@ class TrafficFlowDataset(Dataset):
         else:
             data_len = self.test_size - self.training_args.tgt_len
 
-        return data_len
+        self.his_data = []
+        self.tgt_data = []
+        for i in range(data_len):
+            if self.data_type == "train":
+                i += 0
+            elif self.data_type == "val":
+                i += self.train_size - self.training_args.his_len
+            else:
+                i += self.train_size + self.val_size - self.training_args.his_len
+
+            his_begin = i
+            his_end = his_begin + self.training_args.his_len
+            tgt_begin = his_end
+            tgt_end = tgt_begin + self.training_args.tgt_len
+
+            if "HZME" in self.training_args.dataset_name and (
+                tgt_begin % 288 < 72 or tgt_end % 288 < 72
+            ):
+                continue
+            else:
+                his = self.data[:, his_begin:his_end, :]
+                tgt = self.data[:, tgt_begin:tgt_end, :]
+
+            self.his_data.append(his)
+            self.tgt_data.append(tgt)
+
+    def __getitem__(self, index):
+        return self.his_data[index], self.tgt_data[index]
+
+    def __len__(self):
+        return len(self.his_data)
 
     def inverse_transform(self, data, axis=None):
         if self.training_args.scale:
@@ -218,34 +221,27 @@ if __name__ == "__main__":
     val_dataset = TrafficFlowDataset(args, "val")
     test_dataset = TrafficFlowDataset(args, "test")
 
-    def collate_func(batch_data):
-        src_list, tgt_list = [], []
-
-        for item in batch_data:
-            if item[2]:
-                src_list.append(item[0])
-                tgt_list.append(item[1])
-
-        if len(src_list) == 0:
-            src_list.append(item[0])
-            tgt_list.append(item[1])
-
-        return paddle.stack(src_list), paddle.stack(tgt_list)
-
     traing_dataloader = DataLoader(
-        train_dataset, batch_size=10, shuffle=False, collate_fn=collate_func
+        train_dataset,
+        batch_size=10,
+        shuffle=False,
+        num_workers=4,
     )
     val_dataloader = DataLoader(
-        val_dataset, batch_size=10, shuffle=False, collate_fn=collate_func
+        val_dataset,
+        batch_size=10,
+        shuffle=False,
+        num_workers=4,
     )
     test_dataloader = DataLoader(
-        test_dataset, batch_size=10, shuffle=False, collate_fn=collate_func
+        test_dataset,
+        batch_size=10,
+        shuffle=False,
+        num_workers=4,
     )
 
-    print(test_dataloader[0])
-
-    # for item in traing_dataloader:
-    #     print(item[0].shape, item[1].shape)
+    for item in traing_dataloader:
+        print(item[0].shape, item[1].shape)
 
     # for item in val_dataloader:
     #     print(item[0].shape, item[1].shape)

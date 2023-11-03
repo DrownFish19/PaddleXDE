@@ -62,5 +62,6 @@ parser.add_argument("--continue_training", type=bool, default=False, help="")
 parser.add_argument("--fp16", type=bool, default=False, help="")
 parser.add_argument("--distribute", type=bool, default=False, help="")
 
-args = parser.parse_args("")
+# args = parser.parse_args("")
+args = parser.parse_args()
 os.environ["CUDA_VISIBLE_DEVICES"] = args.devices
