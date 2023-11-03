@@ -106,7 +106,9 @@ class Trainer:
 
         # 保持输入序列长度为12
         encoder_idx = []
-        decoder_idx = []
+        decoder_idx = [
+            paddle.to_tensor([self.training_args.his_len] * self.training_args.tgt_len)
+        ]
         # for week
         if self.training_args.his_len >= 2016:
             self.fix_week = paddle.arange(
@@ -122,15 +124,17 @@ class Trainer:
             )
             encoder_idx.append(self.fix_day)
         # for hour
-        if self.training_args.his_len >= 12:
+        elif self.training_args.his_len >= 12:
             self.fix_hour = paddle.arange(
                 start=self.training_args.his_len - 12,
                 end=self.training_args.his_len,
             )
-            decoder_idx.append(self.fix_hour)
+            encoder_idx.append(self.fix_hour)
+
         # concat all
         encoder_idx = paddle.concat(encoder_idx)
         decoder_idx = paddle.concat(decoder_idx)
+
         if self.training_args.fp16:
             self.encoder_idx = paddle.create_parameter(
                 shape=encoder_idx.shape, dtype="float16"
