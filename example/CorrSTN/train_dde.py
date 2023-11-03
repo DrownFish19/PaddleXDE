@@ -109,26 +109,27 @@ class Trainer:
         decoder_idx = [
             paddle.to_tensor([self.training_args.his_len] * self.training_args.tgt_len)
         ]
+
+        self.fix_week = paddle.arange(
+            start=self.training_args.his_len - 2016,
+            end=self.training_args.his_len - 2016 + 12,
+        )
+        self.fix_day = paddle.arange(
+            start=self.training_args.his_len - 288,
+            end=self.training_args.his_len - 288 + 12,
+        )
+        self.fix_hour = paddle.arange(
+            start=self.training_args.his_len - 12,
+            end=self.training_args.his_len,
+        )
         # for week
         if self.training_args.his_len >= 2016:
-            self.fix_week = paddle.arange(
-                start=self.training_args.his_len - 2016,
-                end=self.training_args.his_len - 2016 + 12,
-            )
             encoder_idx.append(self.fix_week)
         # for day
         elif self.training_args.his_len >= 288:
-            self.fix_day = paddle.arange(
-                start=self.training_args.his_len - 288,
-                end=self.training_args.his_len - 288 + 12,
-            )
             encoder_idx.append(self.fix_day)
         # for hour
         elif self.training_args.his_len >= 12:
-            self.fix_hour = paddle.arange(
-                start=self.training_args.his_len - 12,
-                end=self.training_args.his_len,
-            )
             encoder_idx.append(self.fix_hour)
 
         # concat all
@@ -202,7 +203,11 @@ class Trainer:
 
     def _build_optim(self):
         self.lr_scheduler = CosineAnnealingWithWarmupDecay(
-            max_lr=1, min_lr=0.1, warmup_step=20, decay_step=100
+            max_lr=1,
+            min_lr=0.5,
+            warmup_step=0.1 * self.training_args.train_epochs,
+            decay_step=self.training_args.train_epochs
+            + self.training_args.finetune_epochs,
         )
 
         parameters = [
@@ -212,7 +217,7 @@ class Trainer:
             },
             {
                 "params": [self.encoder_idx, self.decoder_idx],
-                "learning_rate": self.training_args.learning_rate * 0.1,
+                "learning_rate": 0.0,
             },
         ]
 
@@ -353,11 +358,23 @@ class Trainer:
 
         self.early_stopping.reset()
 
-        self.optimizer._learning_rate.max_lr = (
-            self.optimizer._learning_rate.max_lr * 0.1
-        )
-        self.optimizer._learning_rate.min_lr = (
-            self.optimizer._learning_rate.min_lr * 0.01
+        parameters = [
+            {
+                "params": self.net.parameters(),
+                "learning_rate": self.training_args.learning_rate * 0.1,
+            },
+            {
+                "params": [self.encoder_idx, self.decoder_idx],
+                "learning_rate": self.training_args.learning_rate,
+            },
+        ]
+
+        # 定义优化器，传入所有网络参数
+        self.optimizer = optim.Adam(
+            parameters=parameters,
+            learning_rate=1.0,
+            weight_decay=self.training_args.weight_decay,
+            multi_precision=True,
         )
 
         self.finetune = True
