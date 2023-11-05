@@ -19,6 +19,9 @@ class GCN(nn.Layer):
             shape=[1],
             dtype=paddle.get_default_dtype(),
         )
+        if training_args.no_adj:
+            self.alpha.set_value(paddle.to_tensor([0.0]))
+            self.alpha.stop_gradient = True
         self.beta = paddle.create_parameter(shape=[1], dtype=paddle.get_default_dtype())
 
     def forward(self, x):
@@ -70,6 +73,9 @@ class SpatialAttentionGCN(nn.Layer):
         self.alpha = paddle.create_parameter(
             shape=[1], dtype=paddle.get_default_dtype()
         )
+        if args.no_adj:
+            self.alpha.set_value(paddle.to_tensor([0.0]))
+            self.alpha.stop_gradient = True
         self.beta = paddle.create_parameter(shape=[1], dtype=paddle.get_default_dtype())
 
     def forward(self, x):
