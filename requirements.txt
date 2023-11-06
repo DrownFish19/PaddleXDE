@@ -4,3 +4,4 @@ trampoline
 matplotlib
 scikit-learn
 pandas
+visualdl
