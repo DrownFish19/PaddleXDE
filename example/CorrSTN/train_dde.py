@@ -305,11 +305,11 @@ class Trainer:
                 tgt = paddle.cast(tgt, paddle.get_default_dtype())
                 _, training_loss = self.train_one_step(src, tgt)
                 # self.logger.info(f"training_loss: {training_loss.numpy()}")
-                decoder_idx_dict = {
-                    str(i): self.decoder_idx[i].numpy()
-                    for i in range(len(self.decoder_idx))
-                }
-                self.writer.add_scalars("decoder_idx", decoder_idx_dict, global_step)
+                # decoder_idx_dict = {
+                #     str(i): self.decoder_idx[i].numpy()
+                #     for i in range(len(self.decoder_idx))
+                # }
+                # self.writer.add_scalars("decoder_idx", decoder_idx_dict, global_step)
                 epoch_step += 1
                 global_step += 1
             self.logger.info(f"learning_rate: {self.optimizer.get_lr()}")
@@ -322,8 +322,8 @@ class Trainer:
                 best_eval_loss = eval_loss
                 best_epoch = epoch
                 self.logger.info(f"best_epoch: {best_epoch}")
-                self.logger.info(f"eval_loss: {eval_loss}")
-                self.compute_test_loss()
+                self.logger.info(f"eval_loss: {float(eval_loss)}")
+                # self.compute_test_loss()
                 # save parameters
                 # params_filename = os.path.join(self.save_path, f"epoch_{epoch}.params")
                 params_filename = os.path.join(self.save_path, "epoch_best.params")
@@ -475,7 +475,7 @@ class Trainer:
 
     def compute_eval_loss(self):
         with paddle.no_grad():
-            all_eval_loss = []  # 记录了所有batch的loss
+            all_eval_loss = paddle.zeros([1], dtype=paddle.get_default_dtype())  # 记录了所有batch的loss
             start_time = time()
             # self.logger.info(f"self.encoder_idx:{self.encoder_idx}")
             # self.logger.info(f"self.decoder_idx:{self.decoder_idx}")
@@ -484,11 +484,11 @@ class Trainer:
                 src = paddle.cast(src, paddle.get_default_dtype())
                 tgt = paddle.cast(tgt, paddle.get_default_dtype())
                 predict_output, eval_loss = self.eval_one_step(src, tgt)
-                all_eval_loss.append(eval_loss.numpy())
+                all_eval_loss += eval_loss
 
-            eval_loss = np.mean(all_eval_loss)
+            eval_loss = all_eval_loss / len(self.eval_dataloader)
             self.logger.info(f"eval cost time: {time() - start_time} s")
-            self.logger.info(f"eval_loss: {eval_loss}")
+            self.logger.info(f"eval_loss: {float(eval_loss)}")
         return eval_loss
 
     def compute_test_loss(self):
@@ -502,16 +502,16 @@ class Trainer:
                 tgt = paddle.cast(tgt, paddle.get_default_dtype())
                 predict_output, _ = self.test_one_step(src, tgt)
 
-                preds.append(predict_output.detach().numpy())
-                tgts.append(tgt.detach().numpy())
+                preds.append(predict_output)
+                tgts.append(tgt)
             self.logger.info(f"test time on whole data: {time() - start_time} s")
 
-            preds = np.concatenate(preds, axis=0)  # [B,N,T,1]
-            trues = np.concatenate(tgts, axis=0)  # [B,N,T,F]
-            preds = self.test_dataset.inverse_transform(preds, axis=-1)  # [B,N,T,1]
-            trues = self.test_dataset.inverse_transform(trues, axis=-1)  # [B,N,T,1]
+            preds = paddle.concat(preds, axis=0)  # [B,N,T,1]
+            trues = paddle.concat(tgts, axis=0)  # [B,N,T,F]
+            preds = self.test_dataset.inverse_transform(preds, axis=-1).numpy()  # [B,N,T,1]
+            trues = self.test_dataset.inverse_transform(trues, axis=-1).numpy()  # [B,N,T,1]
 
-            self.logger.info(f"preds: {str(preds.shape)}")
+            self.logger.info(f"preds: {preds.shape}")
             self.logger.info(f"tgts: {trues.shape}")
 
             # 计算误差
