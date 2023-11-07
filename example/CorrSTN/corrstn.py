@@ -2,7 +2,11 @@ from copy import deepcopy
 
 import paddle
 from attention import MultiHeadAttentionAwareTemporalContext
-from embedding import SpatialPositionalEmbedding, TemporalPositionalEmbedding
+from embedding import (
+    SpatialPositionalEmbedding,
+    TemporalPositionalEmbedding,
+    TemporalSectionEmbedding,
+)
 from endecoder import Decoder, DecoderLayer, Encoder, EncoderLayer
 from graphconv import GCN, SpatialAttentionGCN
 from paddle import autograd, nn
@@ -21,10 +25,10 @@ class CorrSTN(nn.Layer):
         self.training_args = training_args
 
         self.encoder_dense = nn.Linear(
-            training_args.encoder_input_size, training_args.d_model
+            training_args.encoder_input_size, training_args.d_proj
         )
         self.decoder_dense = nn.Linear(
-            training_args.decoder_input_size, training_args.d_model
+            training_args.decoder_input_size, training_args.d_proj
         )
 
         self.encode_temporal_position = TemporalPositionalEmbedding(
@@ -33,9 +37,11 @@ class CorrSTN(nn.Layer):
         self.decode_temporal_position = TemporalPositionalEmbedding(
             training_args, max_len=training_args.tgt_len
         )
-
+        self.temporal_section_week = TemporalSectionEmbedding(training_args, 7, axis=1)
+        self.temporal_section_day = TemporalSectionEmbedding(training_args, 288, axis=2)
         self.encode_spatial_position = SpatialPositionalEmbedding(
-            training_args, GCN(training_args, adj_matrix, sc_matrix)
+            training_args,
+            GCN(training_args, training_args.d_proj, adj_matrix, sc_matrix),
         )
         self.decode_spatial_position = deepcopy(self.encode_spatial_position)
 
@@ -91,17 +97,29 @@ class CorrSTN(nn.Layer):
         )
 
     def encode(self, src_idx, src):
-        src_dense = self.encoder_dense(src)
-        src_tp_embedding = self.encode_temporal_position(src_dense, src_idx)
-        src_sp_embedding = self.encode_spatial_position(src_tp_embedding)
-        encoder_output = self.encoder(src_sp_embedding)
+        src_dense = self.encoder_dense(src[..., :1])
+        tp_embedding = self.encode_temporal_position(src, src_idx)
+        sp_embedding = self.encode_spatial_position(src)
+        week_embedding = self.temporal_section_week(src)
+        day_embedding = self.temporal_section_day(src)
+
+        embed = src_dense + tp_embedding + sp_embedding
+        embed = paddle.concat([embed, week_embedding, day_embedding], axis=-1)
+
+        encoder_output = self.encoder(embed)
         return encoder_output
 
     def decode(self, encoder_output, tgt_idx=None, tgt=None):
-        tgt_dense = self.decoder_dense(tgt)
-        tgt_tp_embedding = self.decode_temporal_position(tgt_dense, tgt_idx)
-        tgt_sp_embedding = self.decode_spatial_position(tgt_tp_embedding)
-        decoder_output = self.decoder(x=tgt_sp_embedding, memory=encoder_output)
+        tgt_dense = self.decoder_dense(tgt[..., :1])
+        tp_embedding = self.decode_temporal_position(tgt, tgt_idx)
+        sp_embedding = self.decode_spatial_position(tgt)
+        week_embedding = self.temporal_section_week(tgt)
+        day_embedding = self.temporal_section_day(tgt)
+
+        embed = tgt_dense + tp_embedding + sp_embedding
+        embed = paddle.concat([embed, week_embedding, day_embedding], axis=-1)
+
+        decoder_output = self.decoder(x=embed, memory=encoder_output)
         return self.generator(decoder_output)
 
     def forward(self, src_idx, src, tgt_idx=None, tgt=None):

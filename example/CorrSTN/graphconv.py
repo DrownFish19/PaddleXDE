@@ -6,13 +6,13 @@ import paddle.nn.functional as F
 
 
 class GCN(nn.Layer):
-    def __init__(self, training_args, norm_adj_matrix, norm_sc_matrix):
+    def __init__(self, training_args, d_model, norm_adj_matrix, norm_sc_matrix):
         super(GCN, self).__init__()
         self.norm_adj_matrix = norm_adj_matrix
         self.norm_sc_matrix = norm_sc_matrix
         self.Theta = nn.Linear(
-            training_args.d_model,
-            training_args.d_model,
+            d_model,
+            d_model,
             bias_attr=False,
         )
         self.alpha = paddle.create_parameter(

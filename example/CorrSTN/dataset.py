@@ -154,6 +154,7 @@ class TrafficFlowDataset(Dataset):
         self.test_size = int(self.seq_len * self.test_ratio)
         self.data_type = data_type
 
+        # Scaler
         if training_args.scale:
             self.scaler = ScalerMinMax()
             train_data = self.origin_data[: self.train_size, :, :]
@@ -163,6 +164,16 @@ class TrafficFlowDataset(Dataset):
             )
         else:
             self.data = self.origin_data
+
+        # Concat day of week and hour of day index
+        index = np.arange(0, self.seq_len, step=1).reshape([1, -1, 1])
+        index = index.repeat(self.num_nodes, axis=0)
+        day_of_week_index = (index // 288) % 7
+        hour_of_day_index = index % 288
+
+        self.data = np.concatenate(
+            [self.data, day_of_week_index, hour_of_day_index], axis=-1
+        )
 
         if self.data_type == "train":
             data_len = (

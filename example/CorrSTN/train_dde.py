@@ -323,7 +323,7 @@ class Trainer:
                 best_epoch = epoch
                 self.logger.info(f"best_epoch: {best_epoch}")
                 self.logger.info(f"eval_loss: {float(eval_loss)}")
-                # self.compute_test_loss()
+                self.compute_test_loss()
                 # save parameters
                 # params_filename = os.path.join(self.save_path, f"epoch_{epoch}.params")
                 params_filename = os.path.join(self.save_path, "epoch_best.params")
@@ -409,9 +409,9 @@ class Trainer:
                 solver=Euler,
             )
             pred_len = y0.shape[-2]
-            preds = preds[:, :, -pred_len:, :]
+            preds = preds[:, :, -pred_len:, :1]
 
-            loss = self.criterion(preds, tgt)
+            loss = self.criterion(preds, tgt[..., :1])
         if self.net.training:
             if self.training_args.fp16:
                 scaled = self.scaler.scale(loss)  # loss 缩放，乘以系数 loss_scaling
@@ -443,9 +443,9 @@ class Trainer:
                 solver=Euler,
             )
             pred_len = y0.shape[-2]
-            preds = preds[:, :, -pred_len:, :]
+            preds = preds[:, :, -pred_len:, :1]
 
-            loss = self.criterion(preds, tgt)
+            loss = self.criterion(preds, tgt[..., :1])
 
         return preds, loss
 
@@ -467,15 +467,15 @@ class Trainer:
                 solver=Euler,
             )
             pred_len = y0.shape[-2]
-            preds = preds[:, :, -pred_len:, :]
+            preds = preds[:, :, -pred_len:, :1]
 
-            loss = self.criterion(preds, tgt)
+            loss = self.criterion(preds, tgt[..., :1])
 
         return preds, loss
 
     def compute_eval_loss(self):
         with paddle.no_grad():
-            all_eval_loss = paddle.zeros([1], dtype=paddle.get_default_dtype())  # 记录了所有batch的loss
+            all_eval_loss = paddle.zeros([1], dtype=paddle.get_default_dtype())
             start_time = time()
             # self.logger.info(f"self.encoder_idx:{self.encoder_idx}")
             # self.logger.info(f"self.decoder_idx:{self.decoder_idx}")
@@ -503,13 +503,15 @@ class Trainer:
                 predict_output, _ = self.test_one_step(src, tgt)
 
                 preds.append(predict_output)
-                tgts.append(tgt)
+                tgts.append(tgt[..., :1])
             self.logger.info(f"test time on whole data: {time() - start_time} s")
 
             preds = paddle.concat(preds, axis=0)  # [B,N,T,1]
             trues = paddle.concat(tgts, axis=0)  # [B,N,T,F]
-            preds = self.test_dataset.inverse_transform(preds, axis=-1).numpy()  # [B,N,T,1]
-            trues = self.test_dataset.inverse_transform(trues, axis=-1).numpy()  # [B,N,T,1]
+            # [B,N,T,1]
+            preds = self.test_dataset.inverse_transform(preds, axis=-1).numpy()
+            # [B,N,T,1]
+            trues = self.test_dataset.inverse_transform(trues, axis=-1).numpy()
 
             self.logger.info(f"preds: {preds.shape}")
             self.logger.info(f"tgts: {trues.shape}")
