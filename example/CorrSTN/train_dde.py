@@ -105,11 +105,6 @@ class Trainer:
         )
 
         # 保持输入序列长度为12
-        encoder_idx = []
-        decoder_idx = [
-            paddle.to_tensor([self.training_args.his_len] * self.training_args.tgt_len)
-        ]
-
         self.fix_week = paddle.arange(
             start=self.training_args.his_len - 2016,
             end=self.training_args.his_len - 2016 + 12,
@@ -122,15 +117,21 @@ class Trainer:
             start=self.training_args.his_len - 12,
             end=self.training_args.his_len,
         )
+
+        encoder_idx = []
+        decoder_idx = [self.fix_hour[-1:]]
+
         # for week
         if self.training_args.his_len >= 2016:
             encoder_idx.append(self.fix_week)
         # for day
         elif self.training_args.his_len >= 288:
             encoder_idx.append(self.fix_day)
+            decoder_idx.append(self.fix_day[1:])
         # for hour
         elif self.training_args.his_len >= 12:
             encoder_idx.append(self.fix_hour)
+            decoder_idx.append(self.fix_hour[1:])
 
         # concat all
         encoder_idx = paddle.concat(encoder_idx)
@@ -181,9 +182,6 @@ class Trainer:
             self.scaler = paddle.amp.GradScaler(init_loss_scaling=1024)
 
         if self.training_args.continue_training:
-            # params_filename = os.path.join(
-            #     self.save_path, f"epoch_{self.start_epoch}.params"
-            # )
             params_filename = os.path.join(self.save_path, "epoch_best.params")
             self.net.set_state_dict(paddle.load(params_filename))
             self.logger.info(f"load weight from: {params_filename}")
@@ -216,8 +214,8 @@ class Trainer:
                 "learning_rate": self.training_args.learning_rate,
             },
             {
-                "params": [self.encoder_idx, self.decoder_idx],
-                "learning_rate": 0.0,
+                "params": [self.encoder_idx],
+                "learning_rate": self.training_args.learning_rate,
             },
         ]
 
@@ -304,12 +302,8 @@ class Trainer:
                 src = paddle.cast(src, paddle.get_default_dtype())
                 tgt = paddle.cast(tgt, paddle.get_default_dtype())
                 _, training_loss = self.train_one_step(src, tgt)
-                # self.logger.info(f"training_loss: {training_loss.numpy()}")
-                # decoder_idx_dict = {
-                #     str(i): self.decoder_idx[i].numpy()
-                #     for i in range(len(self.decoder_idx))
-                # }
-                # self.writer.add_scalars("decoder_idx", decoder_idx_dict, global_step)
+                self.writer.add_scalar("train/loss", training_loss, global_step)
+                self.writer.add_scalar("train/lr", self.optimizer.get_lr(), global_step)
                 epoch_step += 1
                 global_step += 1
             self.logger.info(f"learning_rate: {self.optimizer.get_lr()}")
@@ -325,7 +319,9 @@ class Trainer:
                 self.logger.info(f"eval_loss: {float(eval_loss)}")
                 self.compute_test_loss()
                 # save parameters
-                # params_filename = os.path.join(self.save_path, f"epoch_{epoch}.params")
+                params_filename = os.path.join(self.save_path, f"epoch_{epoch}.params")
+                paddle.save(self.net.state_dict(), params_filename)
+                self.logger.info(f"save parameters to file: {params_filename}")
                 params_filename = os.path.join(self.save_path, "epoch_best.params")
                 paddle.save(self.net.state_dict(), params_filename)
                 self.logger.info(f"save parameters to file: {params_filename}")
@@ -364,7 +360,7 @@ class Trainer:
                 "learning_rate": self.training_args.learning_rate * 0.1,
             },
             {
-                "params": [self.encoder_idx, self.decoder_idx],
+                "params": [self.decoder_idx],
                 "learning_rate": self.training_args.learning_rate,
             },
         ]
