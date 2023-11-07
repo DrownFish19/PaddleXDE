@@ -124,6 +124,7 @@ class Trainer:
         # for week
         if self.training_args.his_len >= 2016:
             encoder_idx.append(self.fix_week)
+            decoder_idx.append(self.fix_week[1:])
         # for day
         elif self.training_args.his_len >= 288:
             encoder_idx.append(self.fix_day)
