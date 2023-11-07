@@ -85,4 +85,7 @@ class TemporalSectionEmbedding(nn.Layer):
         self.embedding = paddle.nn.Embedding(section_nums, args.d_sect)
 
     def forward(self, x):
-        return self.embedding(paddle.cast(x[..., self.axis], dtype=paddle.int32))
+        input = x[..., self.axis]
+        input = paddle.clip(input,min=0,max=self.embedding._num_embeddings-1)
+        input = paddle.cast(input, dtype=paddle.int32)
+        return self.embedding(input)
