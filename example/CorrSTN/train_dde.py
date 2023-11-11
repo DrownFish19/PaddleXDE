@@ -21,7 +21,7 @@ from utils import (
     norm_adj_matrix,
 )
 from visualdl import LogWriter
-from datetime import datetime
+
 from paddlexde.functional import ddeint
 from paddlexde.solver.fixed_solver import Euler
 
@@ -185,16 +185,16 @@ class Trainer:
         if self.training_args.continue_training:
             self.load()
 
-        self.logger.info(self.net)
+        self.logger.debug(self.net)
 
         total_param = 0
-        self.logger.info("Net's state_dict:")
+        self.logger.debug("Net's state_dict:")
         for param_tensor in self.net.state_dict():
-            self.logger.info(
+            self.logger.debug(
                 f"{param_tensor} \t {self.net.state_dict()[param_tensor].shape}"
             )
             total_param += np.prod(self.net.state_dict()[param_tensor].shape)
-        self.logger.info(f"Net's total params: {total_param}.")
+        self.logger.debug(f"Net's total params: {total_param}.")
 
         self.criterion = nn.L1Loss()  # 定义损失函数
 
@@ -287,8 +287,7 @@ class Trainer:
         paddle.save(self.encoder_idx, encoder_idx_filename)
         paddle.save(self.decoder_idx, decoder_idx_filename)
         self.logger.info(f"save parameters to file: {params_filename}")
-    
-    
+
     def load(self, epoch=None):
         if epoch is not None:
             params_filename = os.path.join(self.save_path, f"epoch_{epoch}.params")
@@ -298,12 +297,12 @@ class Trainer:
             params_filename = os.path.join(self.save_path, "epoch_best.params")
             encoder_idx_filename = os.path.join(self.save_path, "epoch_best.enidx")
             decoder_idx_filename = os.path.join(self.save_path, "epoch_best.deidx")
-        
+
         self.net.set_state_dict(paddle.load(params_filename))
         self.encoder_idx.set_value(paddle.load(encoder_idx_filename))
         self.decoder_idx.set_value(paddle.load(decoder_idx_filename))
         self.logger.info(f"load weight from: {params_filename}")
-        
+
     def train(self):
         self.logger.info("start train...")
 
@@ -497,7 +496,7 @@ class Trainer:
                 tgt = paddle.cast(tgt, paddle.get_default_dtype())
                 predict_output, eval_loss = self.eval_one_step(src, tgt)
                 self.writer.add_scalar(f"eval/loss-{epoch}", eval_loss, batch_index)
-                
+
                 all_eval_loss += eval_loss
 
             eval_loss = all_eval_loss / len(self.eval_dataloader)
@@ -530,11 +529,13 @@ class Trainer:
 
             self.logger.info(f"preds: {preds.shape}")
             self.logger.info(f"tgts: {trues.shape}")
-            
+
             for node_idx in range(50):
                 for index in range(trues.shape[0]):
-                    scalar_dict = {"true": trues[index, node_idx, 6, 0],
-                                "pred": preds[index, node_idx, 6, 0]}
+                    scalar_dict = {
+                        "true": trues[index, node_idx, 6, 0],
+                        "pred": preds[index, node_idx, 6, 0],
+                    }
                     self.writer.add_scalars(f"test/line-{epoch}", scalar_dict, index)
 
             # 计算误差
