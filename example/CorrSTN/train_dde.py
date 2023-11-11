@@ -530,13 +530,12 @@ class Trainer:
             self.logger.info(f"preds: {preds.shape}")
             self.logger.info(f"tgts: {trues.shape}")
 
-            for node_idx in range(50):
-                for index in range(trues.shape[0]):
-                    scalar_dict = {
-                        "true": trues[index, node_idx, 6, 0],
-                        "pred": preds[index, node_idx, 6, 0],
-                    }
-                    self.writer.add_scalars(f"test/line-{epoch}", scalar_dict, index)
+            for index in range(trues.shape[0]):
+                scalar_dict = {
+                    "true": trues[index, 0, 6, 0],
+                    "pred": preds[index, 0, 6, 0],
+                }
+                self.writer.add_scalars(f"test/line-{epoch}", scalar_dict, index)
 
             # 计算误差
             excel_list = []
