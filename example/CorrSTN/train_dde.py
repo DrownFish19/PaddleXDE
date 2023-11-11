@@ -24,7 +24,8 @@ from visualdl import LogWriter
 
 from paddlexde.functional import ddeint
 from paddlexde.solver.fixed_solver import Euler
-
+from paddle.distributed import fleet
+from paddle.io import DataLoader, DistributedBatchSampler
 
 def amp_guard_context(fp16=False):
     if fp16:
@@ -117,22 +118,25 @@ class Trainer:
             start=self.training_args.his_len - 12,
             end=self.training_args.his_len,
         )
+        self.fix_pred = paddle.arange(
+            start=self.training_args.his_len,
+            end=self.training_args.his_len + 12,
+        )
 
         encoder_idx = []
-        decoder_idx = [self.fix_hour[-1:]]
+        decoder_idx = [self.fix_pred]
 
         # for week
         if self.training_args.his_len >= 2016:
             encoder_idx.append(self.fix_week)
-            decoder_idx.append(self.fix_week[1:])
+            
         # for day
-        elif self.training_args.his_len >= 288:
+        if self.training_args.his_len >= 288:
             encoder_idx.append(self.fix_day)
-            decoder_idx.append(self.fix_day[1:])
+            
         # for hour
-        elif self.training_args.his_len >= 12:
+        if self.training_args.his_len >= 12:
             encoder_idx.append(self.fix_hour)
-            decoder_idx.append(self.fix_hour[1:])
 
         # concat all
         encoder_idx = paddle.concat(encoder_idx)
@@ -230,12 +234,6 @@ class Trainer:
             self.logger.info(f"{var_name} \t {self.optimizer.state_dict()[var_name]}")
 
     def _build_distribute(self):
-        # 一、导入分布式专用 Fleet API
-        from paddle.distributed import fleet
-
-        # 构建分布式数据加载器所需 API
-        from paddle.io import DataLoader, DistributedBatchSampler
-
         # 二、初始化 Fleet 环境
         fleet.init(is_collective=True)
 
@@ -389,7 +387,8 @@ class Trainer:
             weight_decay=self.training_args.weight_decay,
             multi_precision=True,
         )
-
+        if self.training_args.distribute:
+            self.optimizer = fleet.distributed_optimizer(self.optimizer)
         self.finetune = True
 
     def train_one_step(self, src, tgt):
@@ -409,7 +408,7 @@ class Trainer:
             y0 = DecoderIndex.apply(
                 lags=self.decoder_idx,
                 his=src,
-                his_span=paddle.arange(self.training_args.his_len),
+                his_span=paddle.arange(self.training_args.his_len + 12),
             )
 
             preds = ddeint(
@@ -418,7 +417,7 @@ class Trainer:
                 t_span=paddle.arange(1 + 1),
                 lags=self.encoder_idx,
                 his=src,
-                his_span=paddle.arange(self.training_args.his_len),
+                his_span=paddle.arange(self.training_args.his_len + 12),
                 solver=Euler,
             )
             pred_len = y0.shape[-2]
@@ -444,7 +443,7 @@ class Trainer:
             y0 = DecoderIndex.apply(
                 lags=self.decoder_idx,
                 his=src,
-                his_span=paddle.arange(self.training_args.his_len),
+                his_span=paddle.arange(self.training_args.his_len + 12),
             )
             preds = ddeint(
                 func=self.net,
@@ -452,7 +451,7 @@ class Trainer:
                 t_span=paddle.arange(1 + 1),
                 lags=self.encoder_idx,
                 his=src,
-                his_span=paddle.arange(self.training_args.his_len),
+                his_span=paddle.arange(self.training_args.his_len + 12),
                 solver=Euler,
             )
             pred_len = y0.shape[-2]
@@ -468,7 +467,7 @@ class Trainer:
             y0 = DecoderIndex.apply(
                 lags=self.decoder_idx,
                 his=src,
-                his_span=paddle.arange(self.training_args.his_len),
+                his_span=paddle.arange(self.training_args.his_len + 12),
             )
             preds = ddeint(
                 func=self.net,
@@ -476,7 +475,7 @@ class Trainer:
                 t_span=paddle.arange(1 + 1),
                 lags=self.encoder_idx,
                 his=src,
-                his_span=paddle.arange(self.training_args.his_len),
+                his_span=paddle.arange(self.training_args.his_len + 12),
                 solver=Euler,
             )
             pred_len = y0.shape[-2]
