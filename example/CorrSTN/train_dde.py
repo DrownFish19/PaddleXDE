@@ -131,11 +131,11 @@ class Trainer:
             encoder_idx.append(self.fix_week)
             
         # for day
-        if self.training_args.his_len >= 288:
+        elif self.training_args.his_len >= 288:
             encoder_idx.append(self.fix_day)
             
         # for hour
-        if self.training_args.his_len >= 12:
+        elif self.training_args.his_len >= 12:
             encoder_idx.append(self.fix_hour)
 
         # concat all
