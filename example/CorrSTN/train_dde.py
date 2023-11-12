@@ -9,7 +9,8 @@ import paddle.nn as nn
 import paddle.optimizer as optim
 from corrstn import CorrSTN, DecoderIndex
 from dataset import TrafficFlowDataset
-from paddle.io import DataLoader
+from paddle.distributed import fleet
+from paddle.io import DataLoader, DistributedBatchSampler
 from paddle.nn.initializer import Constant, XavierUniform
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from utils import (
@@ -24,8 +25,7 @@ from visualdl import LogWriter
 
 from paddlexde.functional import ddeint
 from paddlexde.solver.fixed_solver import Euler
-from paddle.distributed import fleet
-from paddle.io import DataLoader, DistributedBatchSampler
+
 
 def amp_guard_context(fp16=False):
     if fp16:
@@ -122,6 +122,9 @@ class Trainer:
             start=self.training_args.his_len,
             end=self.training_args.his_len + 12,
         )
+        self.fix_pred = paddle.ones(shape=[self.training_args.tgt_len]) * (
+            self.training_args.his_len - 1
+        )
 
         encoder_idx = []
         decoder_idx = [self.fix_pred]
@@ -129,11 +132,11 @@ class Trainer:
         # for week
         if self.training_args.his_len >= 2016:
             encoder_idx.append(self.fix_week)
-            
+
         # for day
         elif self.training_args.his_len >= 288:
             encoder_idx.append(self.fix_day)
-            
+
         # for hour
         elif self.training_args.his_len >= 12:
             encoder_idx.append(self.fix_hour)
@@ -213,10 +216,6 @@ class Trainer:
         parameters = [
             {
                 "params": self.net.parameters(),
-                "learning_rate": self.training_args.learning_rate,
-            },
-            {
-                "params": [self.encoder_idx],
                 "learning_rate": self.training_args.learning_rate,
             },
         ]
@@ -372,10 +371,14 @@ class Trainer:
         parameters = [
             {
                 "params": self.net.parameters(),
-                "learning_rate": self.training_args.learning_rate,
+                "learning_rate": self.training_args.learning_rate * 0.1,
             },
             {
                 "params": [self.decoder_idx],
+                "learning_rate": self.training_args.learning_rate,
+            },
+            {
+                "params": [self.encoder_idx],
                 "learning_rate": self.training_args.learning_rate,
             },
         ]
@@ -408,7 +411,7 @@ class Trainer:
             y0 = DecoderIndex.apply(
                 lags=self.decoder_idx,
                 his=src,
-                his_span=paddle.arange(self.training_args.his_len + 12),
+                his_span=paddle.arange(self.training_args.his_len),
             )
 
             preds = ddeint(
@@ -417,7 +420,7 @@ class Trainer:
                 t_span=paddle.arange(1 + 1),
                 lags=self.encoder_idx,
                 his=src,
-                his_span=paddle.arange(self.training_args.his_len + 12),
+                his_span=paddle.arange(self.training_args.his_len),
                 solver=Euler,
             )
             pred_len = y0.shape[-2]
@@ -443,7 +446,7 @@ class Trainer:
             y0 = DecoderIndex.apply(
                 lags=self.decoder_idx,
                 his=src,
-                his_span=paddle.arange(self.training_args.his_len + 12),
+                his_span=paddle.arange(self.training_args.his_len),
             )
             preds = ddeint(
                 func=self.net,
@@ -451,7 +454,7 @@ class Trainer:
                 t_span=paddle.arange(1 + 1),
                 lags=self.encoder_idx,
                 his=src,
-                his_span=paddle.arange(self.training_args.his_len + 12),
+                his_span=paddle.arange(self.training_args.his_len),
                 solver=Euler,
             )
             pred_len = y0.shape[-2]
@@ -467,7 +470,7 @@ class Trainer:
             y0 = DecoderIndex.apply(
                 lags=self.decoder_idx,
                 his=src,
-                his_span=paddle.arange(self.training_args.his_len + 12),
+                his_span=paddle.arange(self.training_args.his_len),
             )
             preds = ddeint(
                 func=self.net,
@@ -475,7 +478,7 @@ class Trainer:
                 t_span=paddle.arange(1 + 1),
                 lags=self.encoder_idx,
                 his=src,
-                his_span=paddle.arange(self.training_args.his_len + 12),
+                his_span=paddle.arange(self.training_args.his_len),
                 solver=Euler,
             )
             pred_len = y0.shape[-2]

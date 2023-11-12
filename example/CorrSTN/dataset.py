@@ -205,18 +205,18 @@ class TrafficFlowDataset(Dataset):
                 tgt_begin % 288 < 72 or tgt_end % 288 < 72
             ):
                 continue
-            self.his_pair.append((his_begin,his_end))
-            self.tgt_pair.append((tgt_begin,tgt_end))
+            self.his_pair.append((his_begin, his_end))
+            self.tgt_pair.append((tgt_begin, tgt_end))
 
     def __getitem__(self, index):
         his_begin, his_end = self.his_pair[index]
         tgt_begin, tgt_end = self.tgt_pair[index]
-        
+
         his = self.data[:, his_begin:his_end, :]
         tgt = self.data[:, tgt_begin:tgt_end, :]
-        his_extend = his[:,-12:, :] + (his[:,-1:,:] - his[:,-12:-11,:])
-        his = np.concatenate([his, his_extend], axis=-2)
-        
+        # his_extend = his[:,-12:, :] + (his[:,-1:,:] - his[:,-12:-11,:])
+        # his = np.concatenate([his, his_extend], axis=-2)
+
         return his, tgt
 
     def __len__(self):
