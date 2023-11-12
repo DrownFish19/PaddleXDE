@@ -135,9 +135,9 @@ class TrafficFlowDataset(Dataset):
 
         # [T, N, D]
         # D=3 for PEMS04 and PEMS08, D=1 for others
-        self.origin_data = np.load(training_args.data_path)["data"].transpose([1, 0, 2])
-        self.origin_data = self.origin_data[:, :, :1]
-        self.num_nodes, self.seq_len, self.dims = self.origin_data.shape
+        origin_data = np.load(training_args.data_path)["data"].transpose([1, 0, 2])
+        origin_data = origin_data[:, :, :1]
+        self.num_nodes, self.seq_len, self.dims = origin_data.shape
 
         self.train_ratio, self.val_ratio, self.test_ratio = map(
             int, training_args.split.split(":")
@@ -157,13 +157,13 @@ class TrafficFlowDataset(Dataset):
         # Scaler
         if training_args.scale:
             self.scaler = ScalerMinMax()
-            train_data = self.origin_data[: self.train_size, :, :]
+            train_data = origin_data[: self.train_size, :, :]
             self.scaler.fit(train_data.reshape(-1, train_data.shape[-1]))
-            self.data = self.scaler.transform(self.origin_data).reshape(
+            self.data = self.scaler.transform(origin_data).reshape(
                 self.num_nodes, self.seq_len, self.dims
             )
         else:
-            self.data = self.origin_data
+            self.data = origin_data
 
         # Concat day of week and hour of day index
         index = np.arange(0, self.seq_len, step=1).reshape([1, -1, 1])
@@ -186,8 +186,8 @@ class TrafficFlowDataset(Dataset):
         else:
             data_len = self.test_size - self.training_args.tgt_len
 
-        self.his_data = []
-        self.tgt_data = []
+        self.his_pair = []
+        self.tgt_pair = []
         for i in range(data_len):
             if self.data_type == "train":
                 i += 0
@@ -205,18 +205,22 @@ class TrafficFlowDataset(Dataset):
                 tgt_begin % 288 < 72 or tgt_end % 288 < 72
             ):
                 continue
-            else:
-                his = self.data[:, his_begin:his_end, :]
-                tgt = self.data[:, tgt_begin:tgt_end, :]
-
-            self.his_data.append(his)
-            self.tgt_data.append(tgt)
+            self.his_pair.append((his_begin,his_end))
+            self.tgt_pair.append((tgt_begin,tgt_end))
 
     def __getitem__(self, index):
-        return self.his_data[index], self.tgt_data[index]
+        his_begin, his_end = self.his_pair[index]
+        tgt_begin, tgt_end = self.tgt_pair[index]
+        
+        his = self.data[:, his_begin:his_end, :]
+        tgt = self.data[:, tgt_begin:tgt_end, :]
+        his_extend = his[:,-12:, :] + (his[:,-1:,:] - his[:,-12:-11,:])
+        his = np.concatenate([his, his_extend], axis=-2)
+        
+        return his, tgt
 
     def __len__(self):
-        return len(self.his_data)
+        return len(self.his_pair)
 
     def inverse_transform(self, data, axis=None):
         if self.training_args.scale:
