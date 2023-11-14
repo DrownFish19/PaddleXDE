@@ -24,12 +24,16 @@ class BaseDDE(BaseXDE):
         lags: Union[list, paddle.Tensor],
         his: paddle.Tensor,
         his_span: paddle.Tensor,
+        his_processed: bool = False
     ):
         super(BaseDDE, self).__init__(name="DDE", var_nums=1, y0=y0, t_span=t_span)
 
         self.func = func
         self.lags = lags
-        self.y_lags = HistoryIndex.apply(lags=lags, his=his, his_span=his_span)
+        if not his_processed:
+            self.y_lags = HistoryIndex.apply(lags=lags, his=his, his_span=his_span)
+        else:
+            self.y_lags = his
         self.his = his
         self.his_span = his_span
         self.init_y0(y0)
@@ -45,7 +49,7 @@ class BaseDDE(BaseXDE):
         # input_history = paddle.index_select(self.history, self.lags)
 
         # y_lags [B, T, D]  T是选择后的序列长度
-        dy = self.func(self.lags, self.y_lags, None, y0)
+        dy = self.func(self.y_lags, y0)
         return dy
 
     def fuse(self, dy, dt, y0):

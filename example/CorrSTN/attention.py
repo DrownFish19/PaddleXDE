@@ -102,8 +102,6 @@ class MultiHeadAttentionAwareTemporalContext(nn.Layer):
         self,
         args,
         adj_matrix,
-        query_conv_type="1DConv",
-        key_conv_type="1DConv",
     ):
         super(MultiHeadAttentionAwareTemporalContext, self).__init__()
         self.training_args = args
@@ -111,52 +109,14 @@ class MultiHeadAttentionAwareTemporalContext(nn.Layer):
         self.head_dim = args.d_model // args.head
         self.heads = args.head
 
-        # 2 linear layers: 1  for W^V, 1 for W^O
-        self.linears = clones(nn.Linear(args.d_model, args.d_model), 2)
-
-        # 构建aware_temporal_context
-        self.padding_causal = args.kernel_size - 1
-        self.padding_1DConv = (args.kernel_size - 1) // 2
-        self.query_conv_type = query_conv_type
-        self.key_conv_type = key_conv_type
-        if query_conv_type == "1DConv":
-            self.query_conv = nn.Conv2D(
-                args.d_model,
-                args.d_model,
-                (1, args.kernel_size),
-                padding=(0, self.padding_1DConv),
-                bias_attr=True,
-            )
-        else:
-            self.query_conv = nn.Conv2D(
-                args.d_model,
-                args.d_model,
-                (1, args.kernel_size),
-                padding=(0, self.padding_causal),
-                bias_attr=True,
-            )
-
-        if key_conv_type == "1DConv":
-            self.key_conv = nn.Conv2D(
-                args.d_model,
-                args.d_model,
-                (1, args.kernel_size),
-                padding=(0, self.padding_1DConv),
-                bias_attr=True,
-            )
-        else:
-            self.key_conv = nn.Conv2D(
-                args.d_model,
-                args.d_model,
-                (1, args.kernel_size),
-                padding=(0, self.padding_causal),
-                bias_attr=True,
-            )
+        self.query_linear = nn.Linear(args.d_model, args.d_model)
+        self.key_linear = nn.Linear(args.d_model, args.d_model)
+        self.value_linear = nn.Linear(args.d_model, args.d_model)
+        self.out_linear = nn.Linear(args.d_model, args.d_model)
 
         self.dropout = nn.Dropout(p=args.dropout)
 
         self.attention = VanillaAttention()
-
         self.attention_type = args.attention
 
         vals, indx = paddle.topk(adj_matrix, args.top_k, axis=-1)
@@ -176,30 +136,6 @@ class MultiHeadAttentionAwareTemporalContext(nn.Layer):
         )
         mask = paddle.triu(mask, diagonal=1)
         return mask
-
-    def aware_temporal(self, func, conv_type, data):
-        B, N, T, D = data.shape
-
-        if self.training_args.split_seq and T >= 12:
-            data_conv = []
-            for i in range(T // 12):
-                # B, D, N, T
-                res = func(data[:, :, i * 12 : (i + 1) * 12, :].transpose([0, 3, 1, 2]))
-                res = res.transpose([0, 2, 3, 1])  # B, N, T, D
-
-                if conv_type == "causal":
-                    res = res[:, :, : -self.padding_causal, :]
-                data_conv.append(res)
-            data_conv = paddle.concat(data_conv, axis=-2)
-        else:
-            data_conv = func(data.transpose([0, 3, 1, 2]))  # B, D, N, T
-            data_conv = data_conv.transpose([0, 2, 3, 1])  # B, N, T, D
-
-            if conv_type == "causal":
-                data_conv = data_conv[:, :, : -self.padding_causal, :]
-
-        # [B,N,T,D]
-        return data_conv
 
     def forward(
         self,
@@ -229,9 +165,9 @@ class MultiHeadAttentionAwareTemporalContext(nn.Layer):
         else:
             mask = None
 
-        query = self.aware_temporal(self.query_conv, self.query_conv_type, query)
-        key = self.aware_temporal(self.key_conv, self.key_conv_type, key)
-        value = self.linears[0](value)
+        query = self.query_linear(query)
+        key = self.key_linear(key)
+        value = self.value_linear(value)
 
         if self.attention_type == "Corr":
             axis_b = paddle.arange(B)[:, None, None, None, None]
@@ -240,10 +176,14 @@ class MultiHeadAttentionAwareTemporalContext(nn.Layer):
             axis_d = paddle.arange(D)[None, None, None, None, :]
 
             # [B,N,K,H,T,D] => [B,H,T,N,K,D]
-            key_selected = key[axis_b, axis_n, axis_t, axis_d].transpose(
-                [0, 3, 1, 2, 4]
-            )
+            perm = [0, 3, 1, 2, 4]
+            query_selected = query[axis_b, axis_n, axis_t, axis_d].transpose(perm)
+            key_selected = key[axis_b, axis_n, axis_t, axis_d].transpose(perm)
+
+            query = paddle.matmul(self.vals, query_selected).squeeze(-2)
             key = paddle.matmul(self.vals, key_selected).squeeze(-2)
+
+            query = query.transpose([0, 2, 1, 3])
             key = key.transpose([0, 2, 1, 3])
 
         # convert [B,N,T,D] to [B,N,T,H,D] to [B,N,H,T,D]
@@ -258,4 +198,4 @@ class MultiHeadAttentionAwareTemporalContext(nn.Layer):
 
         # [B,N,T,D]
         x = x.transpose(perm).reshape([B, N, -1, self.heads * self.head_dim])
-        return self.linears[1](x)
+        return self.out_linear(x)

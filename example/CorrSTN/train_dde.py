@@ -13,6 +13,7 @@ from paddle.distributed import fleet
 from paddle.io import DataLoader, DistributedBatchSampler
 from paddle.nn.initializer import Constant, XavierUniform
 from sklearn.metrics import mean_absolute_error, mean_squared_error
+from paddlexde.xde.base_dde import HistoryIndex
 from utils import (
     CosineAnnealingWithWarmupDecay,
     EarlyStopping,
@@ -24,7 +25,7 @@ from utils import (
 from visualdl import LogWriter
 
 from paddlexde.functional import ddeint
-from paddlexde.solver.fixed_solver import Euler, RK4
+from paddlexde.solver.fixed_solver import RK4, Euler
 
 
 def amp_guard_context(fp16=False):
@@ -318,14 +319,16 @@ class Trainer:
         best_epoch = 0
         global_step = 0
         epoch = self.training_args.start_epoch
-
+        
+        self.train_func = self.train_one_step
         while (
             epoch < self.training_args.train_epochs + self.training_args.finetune_epochs
         ):
             # finetune => load best trainging model
             if epoch == self.training_args.train_epochs:
-                self._init_finetune()
                 self.compute_test_loss(epoch)
+                self._init_finetune()
+                self.train_func = self.finetune_one_step
 
             self.net.train()  # ensure dropout layers are in train mode
             tr_s_time = time()
@@ -335,7 +338,7 @@ class Trainer:
                 src, tgt = batch_data
                 src = paddle.cast(src, paddle.get_default_dtype())
                 tgt = paddle.cast(tgt, paddle.get_default_dtype())
-                _, training_loss = self.train_one_step(src, tgt)
+                _, training_loss = self.train_func(src, tgt)
                 self.writer.add_scalar("train/loss", training_loss, global_step)
                 self.writer.add_scalar("train/lr", self.optimizer.get_lr(), global_step)
                 epoch_step += 1
@@ -384,7 +387,7 @@ class Trainer:
             warmup_step=0.2 * self.training_args.finetune_epochs,
             decay_step=0.8 * self.training_args.finetune_epochs,
         )
-        
+
         parameters = [
             {
                 "params": self.net.parameters(),
@@ -425,7 +428,6 @@ class Trainer:
         self.net.train()
 
         with amp_guard_context(self.training_args.fp16):
-            # self.decoder_idx.stop_gradient= True
             y0 = DecoderIndex.apply(
                 lags=self.decoder_idx,
                 his=src,
@@ -458,6 +460,58 @@ class Trainer:
                 self.optimizer.clear_grad()
         return preds, loss
 
+    def finetune_one_step(self, src, tgt):
+        """_summary_
+
+        Args:
+            src (_type_): [B,N,T,D]
+            tgt (_type_): [B,N,T,D]
+
+        Returns:
+            _type_: _description_
+        """
+        self.net.train()
+
+        with amp_guard_context(self.training_args.fp16):
+            y0 = DecoderIndex.apply(
+                lags=self.decoder_idx,
+                his=src,
+                his_span=paddle.arange(self.training_args.his_len),
+            )
+            encoder_input = HistoryIndex.apply(
+                lags=self.encoder_idx,
+                his=src,
+                his_span=paddle.arange(self.training_args.his_len),
+            )
+            encoder_output = self.net.encode(encoder_input)
+
+            preds = ddeint(
+                func=self.net.decode,
+                y0=y0,
+                t_span=paddle.arange(1 + 1),
+                lags=None,
+                his=encoder_output,
+                his_span=None,
+                solver=self.dde_solver,
+                his_processed=True,
+            )
+            pred_len = y0.shape[-2]
+            preds = preds[:, :, -pred_len:, :1]
+
+            loss = self.criterion(preds, tgt[..., :1])
+        if self.net.training:
+            if self.training_args.fp16:
+                scaled = self.scaler.scale(loss)  # loss 缩放，乘以系数 loss_scaling
+                scaled.backward()  # 反向传播
+                self.scaler.step(self.optimizer)  # 更新参数（参数梯度先除系数 loss_scaling 再更新参数）
+                self.scaler.update()  # 基于动态 loss_scaling 策略更新 loss_scaling 系数
+                self.optimizer.clear_grad(set_to_zero=False)
+            else:
+                loss.backward()
+                self.optimizer.step()
+                self.optimizer.clear_grad()
+        return preds, loss
+
     def eval_one_step(self, src, tgt):
         self.net.eval()
         with amp_guard_context(self.training_args.fp16):
@@ -466,14 +520,22 @@ class Trainer:
                 his=src,
                 his_span=paddle.arange(self.training_args.his_len),
             )
-            preds = ddeint(
-                func=self.net,
-                y0=y0,
-                t_span=paddle.arange(1 + 1),
+            encoder_input = HistoryIndex.apply(
                 lags=self.encoder_idx,
                 his=src,
                 his_span=paddle.arange(self.training_args.his_len),
+            )
+            encoder_output = self.net.encode(encoder_input)
+
+            preds = ddeint(
+                func=self.net.decode,
+                y0=y0,
+                t_span=paddle.arange(1 + 1),
+                lags=None,
+                his=encoder_output,
+                his_span=None,
                 solver=self.dde_solver,
+                his_processed=True,
             )
             pred_len = y0.shape[-2]
             preds = preds[:, :, -pred_len:, :1]
@@ -490,14 +552,22 @@ class Trainer:
                 his=src,
                 his_span=paddle.arange(self.training_args.his_len),
             )
-            preds = ddeint(
-                func=self.net,
-                y0=y0,
-                t_span=paddle.arange(1 + 1),
+            encoder_input = HistoryIndex.apply(
                 lags=self.encoder_idx,
                 his=src,
                 his_span=paddle.arange(self.training_args.his_len),
+            )
+            encoder_output = self.net.encode(encoder_input)
+
+            preds = ddeint(
+                func=self.net.decode,
+                y0=y0,
+                t_span=paddle.arange(1 + 1),
+                lags=None,
+                his=encoder_output,
+                his_span=None,
                 solver=self.dde_solver,
+                his_processed=True,
             )
             pred_len = y0.shape[-2]
             preds = preds[:, :, -pred_len:, :1]
