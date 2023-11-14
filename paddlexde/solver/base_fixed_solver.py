@@ -136,7 +136,7 @@ class FixedSolver(metaclass=abc.ABCMeta):
                     cubic_hermite_interp(t0, y0, dy0, t1, y1, dy1, t_span[i : i + 1])
                 )
             else:
-                raise ValueError(f"Unknown interpolation method {self.interp}")
+                sol.append(y1)
 
             y0 = y1
 

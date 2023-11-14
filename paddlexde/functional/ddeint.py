@@ -18,6 +18,7 @@ def ddeint(
     rtol=1e-7,
     atol=1e-9,
     options: object = {"norm": _rms_norm},
+    fixed_solver_interp = "linear"
 ):
     """Integrate a system of delay differential equations.
 
@@ -33,7 +34,7 @@ def ddeint(
     # 实现自适应的延迟计算
     # 如果最后存在需要，可以返回每个batch的lags数据，进行可视化查看
 
-    s = solver(xde=xde, y0=xde.y0, rtol=rtol, atol=atol, **options)
+    s = solver(xde=xde, y0=xde.y0, rtol=rtol, atol=atol, interp=fixed_solver_interp, **options)
     solution = s.integrate(t_span)
 
     return solution

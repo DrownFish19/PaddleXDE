@@ -442,6 +442,7 @@ class Trainer:
                 his=src,
                 his_span=paddle.arange(self.training_args.his_len),
                 solver=self.dde_solver,
+                fixed_solver_interp = ""
             )
             pred_len = y0.shape[-2]
             preds = preds[:, :, -pred_len:, :1]
@@ -494,6 +495,7 @@ class Trainer:
                 his_span=None,
                 solver=self.dde_solver,
                 his_processed=True,
+                fixed_solver_interp = ""
             )
             pred_len = y0.shape[-2]
             preds = preds[:, :, -pred_len:, :1]
@@ -536,6 +538,7 @@ class Trainer:
                 his_span=None,
                 solver=self.dde_solver,
                 his_processed=True,
+                fixed_solver_interp = ""
             )
             pred_len = y0.shape[-2]
             preds = preds[:, :, -pred_len:, :1]
@@ -568,6 +571,7 @@ class Trainer:
                 his_span=None,
                 solver=self.dde_solver,
                 his_processed=True,
+                fixed_solver_interp = ""
             )
             pred_len = y0.shape[-2]
             preds = preds[:, :, -pred_len:, :1]
