@@ -1,4 +1,5 @@
 import math
+from copy import deepcopy
 
 import paddle
 import paddle.nn as nn
@@ -102,6 +103,8 @@ class MultiHeadAttentionAwareTemporalContext(nn.Layer):
         self,
         args,
         adj_matrix,
+        query_conv_type="1DConv",
+        key_conv_type="1DConv",
     ):
         super(MultiHeadAttentionAwareTemporalContext, self).__init__()
         self.training_args = args
@@ -109,10 +112,42 @@ class MultiHeadAttentionAwareTemporalContext(nn.Layer):
         self.head_dim = args.d_model // args.head
         self.heads = args.head
 
-        self.query_linear = nn.Linear(args.d_model, args.d_model)
-        self.key_linear = nn.Linear(args.d_model, args.d_model)
-        self.value_linear = nn.Linear(args.d_model, args.d_model)
-        self.out_linear = nn.Linear(args.d_model, args.d_model)
+        # 构建aware_temporal_context
+        self.padding_causal = args.kernel_size - 1
+        self.padding_1DConv = (args.kernel_size - 1) // 2
+        self.query_conv_type = query_conv_type
+        self.key_conv_type = key_conv_type
+
+        conv_1d = nn.Conv2D(
+            args.d_model,
+            args.d_model,
+            (1, args.kernel_size),
+            padding=(0, self.padding_1DConv),
+            bias_attr=True,
+            data_format="NHWC",
+        )
+
+        conv_causal = nn.Conv2D(
+            args.d_model,
+            args.d_model,
+            (1, args.kernel_size),
+            padding=(0, self.padding_causal),
+            bias_attr=True,
+            data_format="NHWC",
+        )
+        if query_conv_type == "1DConv":
+            self.query_conv = deepcopy(conv_1d)
+        else:
+            self.query_conv = deepcopy(conv_causal)
+
+        if key_conv_type == "1DConv":
+            self.key_conv = deepcopy(conv_1d)
+            self.value_conv = deepcopy(conv_1d)
+        else:
+            self.key_conv = deepcopy(conv_causal)
+            self.value_conv = deepcopy(conv_causal)
+
+        self.out_conv = deepcopy(conv_1d)
 
         self.dropout = nn.Dropout(p=args.dropout)
 
@@ -165,9 +200,15 @@ class MultiHeadAttentionAwareTemporalContext(nn.Layer):
         else:
             mask = None
 
-        query = self.query_linear(query)
-        key = self.key_linear(key)
-        value = self.value_linear(value)
+        query = self.query_conv(query)  # B, N, T, D
+        key = self.key_conv(key)  # B, N, T, D
+        value = self.value_conv(value)  # B, N, T, D
+
+        if self.query_conv_type == "causal":
+            query = query[:, :, : -self.padding_causal, :]
+        if self.key_conv_type == "causal":
+            key = key[:, :, : -self.padding_causal, :]
+            value = value[:, :, : -self.padding_causal, :]
 
         if self.attention_type == "Corr":
             axis_b = paddle.arange(B)[:, None, None, None, None]
@@ -198,4 +239,4 @@ class MultiHeadAttentionAwareTemporalContext(nn.Layer):
 
         # [B,N,T,D]
         x = x.transpose(perm).reshape([B, N, -1, self.heads * self.head_dim])
-        return self.out_linear(x)
+        return self.out_conv(x)

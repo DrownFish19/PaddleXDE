@@ -30,13 +30,22 @@ class CorrSTN(nn.Layer):
         self.temporal_section_day = TemporalSectionEmbedding(training_args, 288, axis=2)
 
         attn_ss = MultiHeadAttentionAwareTemporalContext(
-            args=training_args, adj_matrix=sc_matrix
+            args=training_args,
+            adj_matrix=sc_matrix,
+            query_conv_type="1DConv",
+            key_conv_type="1DConv",
         )
         attn_st = MultiHeadAttentionAwareTemporalContext(
-            args=training_args, adj_matrix=sc_matrix
+            args=training_args,
+            adj_matrix=sc_matrix,
+            query_conv_type="causal",
+            key_conv_type="1DConv",
         )
         attn_tt = MultiHeadAttentionAwareTemporalContext(
-            args=training_args, adj_matrix=sc_matrix
+            args=training_args,
+            adj_matrix=sc_matrix,
+            query_conv_type="causal",
+            key_conv_type="causal",
         )
 
         spatial_attention_gcn = SpatialAttentionGCN(

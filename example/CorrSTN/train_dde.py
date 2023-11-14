@@ -13,7 +13,6 @@ from paddle.distributed import fleet
 from paddle.io import DataLoader, DistributedBatchSampler
 from paddle.nn.initializer import Constant, XavierUniform
 from sklearn.metrics import mean_absolute_error, mean_squared_error
-from paddlexde.xde.base_dde import HistoryIndex
 from utils import (
     CosineAnnealingWithWarmupDecay,
     EarlyStopping,
@@ -26,6 +25,7 @@ from visualdl import LogWriter
 
 from paddlexde.functional import ddeint
 from paddlexde.solver.fixed_solver import RK4, Euler
+from paddlexde.xde.base_dde import HistoryIndex
 
 
 def amp_guard_context(fp16=False):
@@ -240,7 +240,7 @@ class Trainer:
         self.logger.info("Optimizer's state_dict:")
         for var_name in self.optimizer.state_dict():
             self.logger.info(f"{var_name} \t {self.optimizer.state_dict()[var_name]}")
-            
+
         self.dde_solver = Euler
 
     def _build_distribute(self):
@@ -319,7 +319,7 @@ class Trainer:
         best_epoch = 0
         global_step = 0
         epoch = self.training_args.start_epoch
-        
+
         self.train_func = self.train_one_step
         while (
             epoch < self.training_args.train_epochs + self.training_args.finetune_epochs
