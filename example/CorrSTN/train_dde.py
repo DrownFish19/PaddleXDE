@@ -24,7 +24,7 @@ from utils import (
 from visualdl import LogWriter
 
 from paddlexde.functional import ddeint
-from paddlexde.solver.fixed_solver import Euler
+from paddlexde.solver.fixed_solver import Euler, RK4
 
 
 def amp_guard_context(fp16=False):
@@ -218,6 +218,14 @@ class Trainer:
                 "params": self.net.parameters(),
                 "learning_rate": self.training_args.learning_rate,
             },
+            {
+                "params": [self.decoder_idx],
+                "learning_rate": self.training_args.learning_rate * 0.1,
+            },
+            {
+                "params": [self.encoder_idx],
+                "learning_rate": self.training_args.learning_rate * 0.1,
+            },
         ]
 
         # 定义优化器，传入所有网络参数
@@ -231,6 +239,8 @@ class Trainer:
         self.logger.info("Optimizer's state_dict:")
         for var_name in self.optimizer.state_dict():
             self.logger.info(f"{var_name} \t {self.optimizer.state_dict()[var_name]}")
+            
+        self.dde_solver = Euler
 
     def _build_distribute(self):
         # 二、初始化 Fleet 环境
@@ -368,6 +378,13 @@ class Trainer:
 
         self.early_stopping.reset()
 
+        self.lr_scheduler = CosineAnnealingWithWarmupDecay(
+            max_lr=1,
+            min_lr=0.1,
+            warmup_step=0.2 * self.training_args.finetune_epochs,
+            decay_step=0.8 * self.training_args.finetune_epochs,
+        )
+        
         parameters = [
             {
                 "params": self.net.parameters(),
@@ -386,10 +403,11 @@ class Trainer:
         # 定义优化器，传入所有网络参数
         self.optimizer = optim.Adam(
             parameters=parameters,
-            learning_rate=0.1,
+            learning_rate=self.lr_scheduler,
             weight_decay=self.training_args.weight_decay,
             multi_precision=True,
         )
+        self.dde_solver = RK4
         if self.training_args.distribute:
             self.optimizer = fleet.distributed_optimizer(self.optimizer)
         self.finetune = True
@@ -421,7 +439,7 @@ class Trainer:
                 lags=self.encoder_idx,
                 his=src,
                 his_span=paddle.arange(self.training_args.his_len),
-                solver=Euler,
+                solver=self.dde_solver,
             )
             pred_len = y0.shape[-2]
             preds = preds[:, :, -pred_len:, :1]
@@ -455,7 +473,7 @@ class Trainer:
                 lags=self.encoder_idx,
                 his=src,
                 his_span=paddle.arange(self.training_args.his_len),
-                solver=Euler,
+                solver=self.dde_solver,
             )
             pred_len = y0.shape[-2]
             preds = preds[:, :, -pred_len:, :1]
@@ -479,7 +497,7 @@ class Trainer:
                 lags=self.encoder_idx,
                 his=src,
                 his_span=paddle.arange(self.training_args.his_len),
-                solver=Euler,
+                solver=self.dde_solver,
             )
             pred_len = y0.shape[-2]
             preds = preds[:, :, -pred_len:, :1]
