@@ -43,12 +43,16 @@ parser.add_argument("--d_model", type=int, default=64, help="d_proj+d_sect*2")
 parser.add_argument("--d_proj", type=int, default=32)
 parser.add_argument("--d_sect", type=int, default=16)
 parser.add_argument("--attention", type=str, default="Corr", help="Corr,Vanilla")
-parser.add_argument("--split_seq", type=bool, default=False, help="split q k v")
+parser.add_argument(
+    "--split_seq", type=bool, default=False, help="split q k v along seqlen(t=12)"
+)
 parser.add_argument("--head", type=int, default=8, help="head")
 parser.add_argument("--kernel_size", type=int, default=3, help="kernel_size")
 parser.add_argument("--top_k", type=int, default=5, help="top_k")
 parser.add_argument("--smooth_layer_num", type=int, default=1)
 parser.add_argument("--no_adj", type=bool, default=False, help="no adj")
+parser.add_argument("--solver", type=str, default="euler", help="euler,midpoint,rk4")
+
 
 # train config
 parser.add_argument("--learning_rate", type=float, default=1e-3)

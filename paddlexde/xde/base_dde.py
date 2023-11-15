@@ -24,7 +24,7 @@ class BaseDDE(BaseXDE):
         lags: Union[list, paddle.Tensor],
         his: paddle.Tensor,
         his_span: paddle.Tensor,
-        his_processed: bool = False
+        his_processed: bool = False,
     ):
         super(BaseDDE, self).__init__(name="DDE", var_nums=1, y0=y0, t_span=t_span)
 

@@ -24,7 +24,7 @@ from utils import (
 from visualdl import LogWriter
 
 from paddlexde.functional import ddeint
-from paddlexde.solver.fixed_solver import RK4, Euler
+from paddlexde.solver.fixed_solver import RK4, Euler, Midpoint
 from paddlexde.xde.base_dde import HistoryIndex
 
 
@@ -241,7 +241,14 @@ class Trainer:
         for var_name in self.optimizer.state_dict():
             self.logger.info(f"{var_name} \t {self.optimizer.state_dict()[var_name]}")
 
-        self.dde_solver = Euler
+        if self.training_args.solver == "euler":
+            self.dde_solver = Euler
+        elif self.training_args.solver == "midpoint":
+            self.dde_solver = Midpoint
+        elif self.training_args.solver == "rk4":
+            self.dde_solver = RK4
+
+        self.logger.info(f"dde_solver: {self.dde_solver}")
 
     def _build_distribute(self):
         # 二、初始化 Fleet 环境
@@ -410,7 +417,7 @@ class Trainer:
             weight_decay=self.training_args.weight_decay,
             multi_precision=True,
         )
-        self.dde_solver = RK4
+
         if self.training_args.distribute:
             self.optimizer = fleet.distributed_optimizer(self.optimizer)
         self.finetune = True
@@ -442,7 +449,7 @@ class Trainer:
                 his=src,
                 his_span=paddle.arange(self.training_args.his_len),
                 solver=self.dde_solver,
-                fixed_solver_interp = ""
+                fixed_solver_interp="",
             )
             pred_len = y0.shape[-2]
             preds = preds[:, :, -pred_len:, :1]
@@ -495,7 +502,7 @@ class Trainer:
                 his_span=None,
                 solver=self.dde_solver,
                 his_processed=True,
-                fixed_solver_interp = ""
+                fixed_solver_interp="",
             )
             pred_len = y0.shape[-2]
             preds = preds[:, :, -pred_len:, :1]
@@ -538,7 +545,7 @@ class Trainer:
                 his_span=None,
                 solver=self.dde_solver,
                 his_processed=True,
-                fixed_solver_interp = ""
+                fixed_solver_interp="",
             )
             pred_len = y0.shape[-2]
             preds = preds[:, :, -pred_len:, :1]
@@ -571,7 +578,7 @@ class Trainer:
                 his_span=None,
                 solver=self.dde_solver,
                 his_processed=True,
-                fixed_solver_interp = ""
+                fixed_solver_interp="",
             )
             pred_len = y0.shape[-2]
             preds = preds[:, :, -pred_len:, :1]
