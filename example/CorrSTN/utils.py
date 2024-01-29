@@ -73,7 +73,7 @@ class Logger:
         # 创建一个logger
         logger = logging.getLogger(self.name)
         # 设置logger的日志级别
-        logger.setLevel(logging.DEBUG)
+        logger.setLevel(logging.INFO)
         # 创建一个handler，用于写入日志文件
         file_handler = logging.FileHandler(self.log_file)
         # 定义handler的输出格式

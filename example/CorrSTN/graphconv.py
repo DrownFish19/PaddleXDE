@@ -6,19 +6,22 @@ import paddle.nn.functional as F
 
 
 class GCN(nn.Layer):
-    def __init__(self, training_args, norm_adj_matrix, norm_sc_matrix):
+    def __init__(self, training_args, d_model, norm_adj_matrix, norm_sc_matrix):
         super(GCN, self).__init__()
-        self.register_buffer("norm_adj_matrix", norm_adj_matrix)
-        self.register_buffer("norm_sc_matrix", norm_sc_matrix)
+        self.norm_adj_matrix = norm_adj_matrix
+        self.norm_sc_matrix = norm_sc_matrix
         self.Theta = nn.Linear(
-            training_args.d_model,
-            training_args.d_model,
+            d_model,
+            d_model,
             bias_attr=False,
         )
         self.alpha = paddle.create_parameter(
             shape=[1],
             dtype=paddle.get_default_dtype(),
         )
+        if training_args.no_adj:
+            self.alpha.set_value(paddle.to_tensor([0.0]))
+            self.alpha.stop_gradient = True
         self.beta = paddle.create_parameter(shape=[1], dtype=paddle.get_default_dtype())
 
     def forward(self, x):
@@ -61,8 +64,8 @@ class SpatialAttentionLayer(nn.Layer):
 class SpatialAttentionGCN(nn.Layer):
     def __init__(self, args, adj_matrix, sc_matrix, is_scale=True):
         super(SpatialAttentionGCN, self).__init__()
-        self.register_buffer("norm_adj", adj_matrix)
-        self.register_buffer("norm_sc", sc_matrix)
+        self.norm_adj = adj_matrix
+        self.norm_sc = sc_matrix
         self.args = args
         self.linear = nn.Linear(args.d_model, args.d_model, bias_attr=False)
         self.is_scale = is_scale
@@ -70,6 +73,9 @@ class SpatialAttentionGCN(nn.Layer):
         self.alpha = paddle.create_parameter(
             shape=[1], dtype=paddle.get_default_dtype()
         )
+        if args.no_adj:
+            self.alpha.set_value(paddle.to_tensor([0.0]))
+            self.alpha.stop_gradient = True
         self.beta = paddle.create_parameter(shape=[1], dtype=paddle.get_default_dtype())
 
     def forward(self, x):

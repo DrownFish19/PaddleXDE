@@ -65,6 +65,8 @@ class Trainer:
         self._build_data()
         self._build_model()
         self._build_optim()
+        if training_args.distribute:
+            self._build_distribute()
 
     def _build_data(self):
         self.train_dataset = TrafficFlowDataset(self.training_args, "train")
@@ -172,6 +174,51 @@ class Trainer:
         for var_name in self.optimizer.state_dict():
             self.logger.info(f"{var_name} \t {self.optimizer.state_dict()[var_name]}")
 
+    def _build_distribute(self):
+        # 一、导入分布式专用 Fleet API
+        from paddle.distributed import fleet
+
+        # 构建分布式数据加载器所需 API
+        from paddle.io import DataLoader, DistributedBatchSampler
+
+        # 二、初始化 Fleet 环境
+        fleet.init(is_collective=True)
+
+        # 三、构建分布式训练使用的网络模型
+        self.net = fleet.distributed_model(self.net)
+
+        # 四、构建分布式训练使用的优化器
+        self.optimizer = fleet.distributed_optimizer(self.optimizer)
+
+        # 五、构建分布式训练使用的数据集
+        train_sampler = DistributedBatchSampler(
+            self.train_dataset,
+            batch_size=self.training_args.batch_size,
+            shuffle=True,
+            drop_last=False,
+        )
+        self.train_dataloader = DataLoader(
+            self.train_dataset, batch_sampler=train_sampler, num_workers=2
+        )
+        eval_sampler = DistributedBatchSampler(
+            self.val_dataset,
+            batch_size=self.training_args.batch_size * 32,
+            shuffle=False,
+            drop_last=False,
+        )
+        self.eval_dataloader = DataLoader(
+            self.val_dataset, batch_sampler=eval_sampler, num_workers=2
+        )
+        test_sampler = DistributedBatchSampler(
+            self.test_dataset,
+            batch_size=self.training_args.batch_size * 32,
+            shuffle=False,
+            drop_last=False,
+        )
+        self.test_dataloader = DataLoader(
+            self.test_dataset, batch_sampler=test_sampler, num_workers=2
+        )
+
     def train(self):
         self.logger.info("start train...")
 
@@ -187,6 +234,7 @@ class Trainer:
             # finetune => load best trainging model
             if epoch == self.training_args.train_epochs:
                 self._init_finetune()
+                self.compute_test_loss()
 
             self.net.train()  # ensure dropout layers are in train mode
             tr_s_time = time()
@@ -209,7 +257,7 @@ class Trainer:
                 best_epoch = epoch
                 self.logger.info(f"best_epoch: {best_epoch}")
                 self.logger.info(f"eval_loss: {eval_loss}")
-                self.compute_test_loss()
+                # self.compute_test_loss()
                 # save parameters
                 # params_filename = os.path.join(self.save_path, f"epoch_{epoch}.params")
                 params_filename = os.path.join(self.save_path, "epoch_best.params")
@@ -264,8 +312,11 @@ class Trainer:
 
         with amp_guard_context(self.training_args.fp16):
             if not self.finetune:
+                decoder_input = paddle.concat(
+                    [src[:, :, -1:, :], tgt[:, :, :-1, :]], axis=-2
+                )
                 decoder_output = self.net(
-                    src=encoder_input, src_idx=self.encoder_idx, tgt=tgt
+                    src=encoder_input, src_idx=self.encoder_idx, tgt=decoder_input
                 )
             else:
                 decoder_start_inputs = encoder_input[:, :, -1:, :]

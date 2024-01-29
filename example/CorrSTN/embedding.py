@@ -1,19 +1,14 @@
 import math
-from typing import List
 
-import numpy as np
 import paddle
 import paddle.nn as nn
-import pandas as pd
-from pandas.tseries import offsets
-from pandas.tseries.frequencies import to_offset
 
 
 class SpatialPositionalEmbedding(nn.Layer):
     def __init__(self, args, gcn=None):
         super(SpatialPositionalEmbedding, self).__init__()
         self.dropout = nn.Dropout(p=args.dropout)
-        self.embedding = paddle.nn.Embedding(args.num_nodes, args.d_model)
+        self.embedding = paddle.nn.Embedding(args.num_nodes, args.d_proj)
         self.gcn_smooth_layers = None
         if (gcn is not None) and (args.smooth_layer_num > 0):
             self.gcn_smooth_layers = nn.LayerList(
@@ -31,8 +26,7 @@ class SpatialPositionalEmbedding(nn.Layer):
         if self.gcn_smooth_layers is not None:
             for _, l in enumerate(self.gcn_smooth_layers):
                 embed = l(embed)  # [1,N,D] -> [1,N,D]
-        x = x + embed.unsqueeze(-2)  # [B,N,T,D]+[1,N,1,D]
-        return self.dropout(x)
+        return embed.unsqueeze(-2)  # [B,N,T,D]+[1,N,1,D]
 
 
 class TemporalPositionalEmbedding(nn.Layer):
@@ -41,7 +35,7 @@ class TemporalPositionalEmbedding(nn.Layer):
         self.args = args
         self.dropout = nn.Dropout(p=args.dropout)
         self.max_len = max_len
-        self.d_model = args.d_model
+        self.d_model = args.d_proj
         # computing the positional encodings once in log space
         pe = paddle.zeros([max_len, self.d_model])
         for pos in range(max_len):
@@ -71,70 +65,27 @@ class TemporalPositionalEmbedding(nn.Layer):
         if lookup_index is None:
             lookup_index = paddle.arange(x.shape[-2])
             # [B,N,T,D] + [1,1,T,D]
-            x = x + paddle.index_select(self.pe, lookup_index, axis=-2)
+            embed = paddle.index_select(self.pe, lookup_index, axis=-2)
         else:
+            if lookup_index.dtype != paddle.int64:
+                lookup_index = paddle.cast(lookup_index, dtype="int64")
+            embed = paddle.index_select(self.pe, lookup_index, axis=-2)
 
-            x = x + paddle.index_select(self.pe, lookup_index, axis=-2)
-
-        return self.dropout(x.detach())
-
-
-class TimeEmbedding:
-    def __init__(self):
-        pass
-
-    def __call__(self, index: pd.DatetimeIndex) -> np.ndarray:
-        pass
-
-    def __repr__(self):
-        return self.__class__.__name__ + "()"
+        return embed
 
 
-class MinuteOfHour(TimeEmbedding):
-    """Minute of hour encoded as value between [-1.0, 1.0]"""
+class TemporalSectionEmbedding(nn.Layer):
+    def __init__(self, args, section_nums, axis=1):
+        """
+        axis=1 indicate day of week
+        axis=2 indicate hour of day
+        """
+        super(TemporalSectionEmbedding, self).__init__()
+        self.axis = axis
+        self.embedding = paddle.nn.Embedding(section_nums, args.d_sect)
 
-    def __call__(self, index: pd.DatetimeIndex) -> np.ndarray:
-        return (index.minute / 59.0 - 0.5) * 2.0
-
-
-class HourOfDay(TimeEmbedding):
-    """Hour of day encoded as value between [-1.0, 1.0]"""
-
-    def __call__(self, index: pd.DatetimeIndex) -> np.ndarray:
-        return (index.hour / 23.0 - 0.5) * 2.0
-
-
-def time_features_from_frequency_str(freq_str: str) -> List[TimeEmbedding]:
-    """
-    Returns a list of time features that will be appropriate for the given frequency string.
-    Parameters
-    ----------
-    freq_str
-        Frequency string of the form [multiple][granularity] such as "12H", "5min", "1D" etc.
-    """
-
-    features_by_offsets = {
-        offsets.Hour: [HourOfDay],
-        offsets.Minute: [MinuteOfHour, HourOfDay],
-    }
-    offset = to_offset(freq_str)
-
-    for offset_type, feature_classes in features_by_offsets.items():
-        if isinstance(offset, offset_type):
-            return [cls() for cls in feature_classes]
-
-
-def time_embedding(dates, freq="10T"):
-    dates = pd.to_datetime(list(dates))
-    res = []
-    for feat in time_features_from_frequency_str(freq):
-        res.append(feat(dates))
-
-    return np.vstack(res).transpose(1, 0)
-
-
-if __name__ == "__main__":
-    dataStrs = ["00:10", "12:30", "13:30", "22:20"]
-    time_embedding_res = time_embedding(dates=dataStrs)
-    print(time_embedding_res)
-    print()
+    def forward(self, x):
+        input = x[..., self.axis]
+        input = paddle.clip(input,min=0,max=self.embedding._num_embeddings-1)
+        input = paddle.cast(input, dtype=paddle.int32)
+        return self.embedding(input)

@@ -95,7 +95,7 @@ def construct_problem(npts=10, ode="constant", reverse=False, dtype=paddle.float
         t_points = _flip(t_points, 0).clone().detach()
         sol = _flip(sol, 0).clone().detach()
 
-    return f, paddle.assign(sol[0]), t_points, sol
+    return f, paddle.assign(sol[0]).unsqueeze(0), t_points, sol.unsqueeze(0)
 
 
 if __name__ == "__main__":
