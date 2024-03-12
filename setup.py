@@ -20,7 +20,7 @@ def main():
     setup(
         name="paddlexde",
         version=__version__,
-        description="PaddleXDE is a libarary that helps you build deep learning applications for PaddlePaddle using ordinary differential equations.",
+        description="PaddleXDE is a library that helps you build deep learning applications for PaddlePaddle using ordinary differential equations.",
         author="drownfish19",
         author_email="drownfish19@gmail.com",
         url="https://github.com/DrownFish19/paddlexde",  # project home page, if any
