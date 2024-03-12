@@ -6,13 +6,13 @@ from .interpolate_base import InterpolationBase
 class LinearInterpolation(InterpolationBase):
     """Calculates the linear interpolation to the batch of controls given. Also calculates its derivative."""
 
-    def __init__(self, series, t=None, **kwargs):
+    def __init__(self, series, t=None):
         """_summary_
 
         Arguments:
         -----------
             series (tensor): B T D
-            t (_type_, optional): _description_. Defaults to None.
+            t (_type_, optional): _description_. Defaults to None. [T]
 
         Example:
         -----------
@@ -29,7 +29,7 @@ class LinearInterpolation(InterpolationBase):
         print(chp.derivative(99))
         ```
         """
-        super().__init__(series, t, **kwargs)
+        super().__init__(series, t)
 
         # build cubic hemite spline matrix H
         indices = [[0, 0, 1], [0, 1, 0]]
@@ -44,24 +44,23 @@ class LinearInterpolation(InterpolationBase):
 
         Args:
             series (_type_): [B, T, D]
-            t (_type_): [B, T]
+            t (_type_): [T]
 
             Note: B can be ignored
 
         Returns:
             _type_: _description_
         """
-        scale = t[..., 1:] - t[..., :-1]
-        scale1 = paddle.concat([scale, scale[..., -1:]], axis=-1)
-        scale2 = paddle.concat([scale[..., :1], scale1[..., :-1]], axis=-1)
+        scale = t[1:] - t[:-1]
+        scale1 = paddle.concat([scale, scale[-1:]])
+        scale2 = paddle.concat([scale[:1], scale1[:-1]])
 
         series1 = series
         series2 = paddle.concat([series1[..., 1:, :], series[..., -1:, :]], axis=-2)
 
         # [B, T, 2, D]
         series_r = paddle.stack(
-            [series1 / scale1.unsqueeze(-1), series2 / scale2.unsqueeze(-1)],
-            axis=-2,
+            [series1 / scale1.unsqueeze(-1), series2 / scale2.unsqueeze(-1)], axis=-2
         )
 
         return series_r, scale1
@@ -82,19 +81,15 @@ class LinearInterpolation(InterpolationBase):
         """_summary_
 
         Args:
-            index (_type_): [B, T]
+            index (_type_): [T]
 
         Returns:
             _type_: _description_
         """
-        axis_b = paddle.arange(self._batch_size)[:, None, None]
-        axis_index = index[:, :, None]
-        axis_d = paddle.arange(self._dims)[None, None, :]
-
         p_tensor = paddle.stack(
             [
-                (self._series_arr[..., 0, :])[axis_b, axis_index, axis_d],
-                (self._series_arr[..., 1, :])[axis_b, axis_index, axis_d],
+                paddle.index_select(self._series_arr[..., 0, :], index, axis=-2),
+                paddle.index_select(self._series_arr[..., 1, :], index, axis=-2),
             ],
             axis=-2,
         )
@@ -141,24 +136,23 @@ class CubicHermiteSpline(InterpolationBase):
 
         Args:
             series (_type_): [B, T, D]
-            t (_type_): [B, T]
+            t (_type_): [T]
 
             Note: B can be ignored
 
         Returns:
             _type_: _description_
         """
-        scale = t[..., 1:] - t[..., :-1]
-        scale1 = paddle.concat([scale, scale[..., -1:]], axis=-1)
-        scale2 = paddle.concat([scale[..., :1], scale1[..., :-1]], axis=-1)
+        scale = t[1:] - t[:-1]
+        scale1 = paddle.concat([scale, scale[-1:]])
+        scale2 = paddle.concat([scale[:1], scale1[:-1]])
 
         series1 = series
         series2 = paddle.concat([series1[..., 1:, :], series[..., -1:, :]], axis=-2)
 
         # [B, T, S, D]
         series_r = paddle.stack(
-            [series1 / scale1.unsqueeze(-1), series2 / scale2.unsqueeze(-1)],
-            axis=-2,
+            [series1 / scale1.unsqueeze(-1), series2 / scale2.unsqueeze(-1)], axis=-2
         )
 
         return series_r, scale1
@@ -168,15 +162,15 @@ class CubicHermiteSpline(InterpolationBase):
 
         Args:
             series (_type_): [B, T, D]
-            t (_type_): [B, T]
+            t (_type_): [T]
 
             Note: B can be ignored
 
         Returns:
             _type_: _description_
         """
-        diffs_t = t[..., 1:] - t[..., :-1]
-        diffs_t1 = paddle.concat([diffs_t, diffs_t[..., -1:]], axis=-1)
+        diffs_t = t[1:] - t[:-1]
+        diffs_t1 = paddle.concat([diffs_t, diffs_t[-1:]])
 
         diffs_series = series[..., 1:, :] - series[..., :-1, :]
         diffs_series = paddle.concat([diffs_series, diffs_series[..., -1:, :]], axis=-2)
@@ -197,16 +191,12 @@ class CubicHermiteSpline(InterpolationBase):
         return t_tensor  # [B, T, 1, M]
 
     def ps(self, index):
-        axis_b = paddle.arange(self._batch_size)[:, None, None]
-        axis_index = index[:, :, None]
-        axis_d = paddle.arange(self._dims)[None, None, :]
-
         p_tensor = paddle.stack(
             [
-                (self._series_arr[..., 0, :])[axis_b, axis_index, axis_d],
-                (self._series_arr[..., 1, :])[axis_b, axis_index, axis_d],
-                self._derivs[axis_b, axis_index, axis_d],
-                self._derivs[axis_b, axis_index, axis_d],
+                paddle.index_select(self._series_arr[..., 0, :], index, axis=-2),
+                paddle.index_select(self._series_arr[..., 1, :], index, axis=-2),
+                paddle.index_select(self._derivs, index, axis=-2),
+                paddle.index_select(self._derivs, index + 1, axis=-2),
             ],
             axis=-2,
         )
@@ -258,13 +248,11 @@ class BezierSpline(InterpolationBase):
         Returns:
             _type_: _description_
         """
-        scale = t[..., 3:] - t[..., :-3]
-        scale1 = paddle.concat(
-            [scale, scale[..., -1:], scale[..., -1:], scale[..., -1:]], axis=-1
-        )
-        scale2 = paddle.concat([scale[..., :1], scale1[..., :-1]], axis=-1)
-        scale3 = paddle.concat([scale[..., :1], scale2[..., :-1]], axis=-1)
-        scale4 = paddle.concat([scale[..., :1], scale3[..., :-1]], axis=-1)
+        scale = t[3:] - t[:-3]
+        scale1 = paddle.concat([scale, scale[-1:], scale[-1:], scale[-1:]])
+        scale2 = paddle.concat([scale[:1], scale1[:-1]])
+        scale3 = paddle.concat([scale[:1], scale2[:-1]])
+        scale4 = paddle.concat([scale[:1], scale3[:-1]])
 
         series1 = series
         series2 = paddle.concat([series1[..., 1:, :], series[..., -1:, :]], axis=-2)
@@ -297,15 +285,12 @@ class BezierSpline(InterpolationBase):
         return t_tensor  # [B, T, 1, M]
 
     def ps(self, index):
-        axis_b = paddle.arange(self._batch_size)[:, None, None]
-        axis_index = index[:, :, None]
-        axis_d = paddle.arange(self._dims)[None, None, :]
         p_tensor = paddle.stack(
             [
-                (self._series_arr[..., 0, :])[axis_b, axis_index, axis_d],
-                (self._series_arr[..., 1, :])[axis_b, axis_index, axis_d],
-                (self._series_arr[..., 2, :])[axis_b, axis_index, axis_d],
-                (self._series_arr[..., 3, :])[axis_b, axis_index, axis_d],
+                paddle.index_select(self._series_arr[..., 0, :], index, axis=-2),
+                paddle.index_select(self._series_arr[..., 1, :], index, axis=-2),
+                paddle.index_select(self._series_arr[..., 2, :], index, axis=-2),
+                paddle.index_select(self._series_arr[..., 3, :], index, axis=-2),
             ],
             axis=-2,
         )

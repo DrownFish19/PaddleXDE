@@ -134,3 +134,6 @@ FETCH_HEAD
 
 # vscode
 # .vscode
+
+# experiments
+experiments/*

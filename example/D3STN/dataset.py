@@ -135,8 +135,9 @@ class TrafficFlowDataset(Dataset):
 
         # [T, N, D]
         # D=3 for PEMS04 and PEMS08, D=1 for others
-        self.origin_data = np.load(training_args.data_path)["data"].transpose([1, 0, 2])
-        self.num_nodes, self.seq_len, self.dims = self.origin_data.shape
+        origin_data = np.load(training_args.data_path)["data"].transpose([1, 0, 2])
+        origin_data = origin_data[:, :, :1]
+        self.num_nodes, self.seq_len, self.dims = origin_data.shape
 
         self.train_ratio, self.val_ratio, self.test_ratio = map(
             int, training_args.split.split(":")
@@ -153,49 +154,27 @@ class TrafficFlowDataset(Dataset):
         self.test_size = int(self.seq_len * self.test_ratio)
         self.data_type = data_type
 
+        # Scaler
         if training_args.scale:
             self.scaler = ScalerMinMax()
-            train_data = self.origin_data[: self.train_size, :, :]
+            train_data = origin_data[: self.train_size, :, :]
             self.scaler.fit(train_data.reshape(-1, train_data.shape[-1]))
-            self.data = self.scaler.transform(self.origin_data).reshape(
+            self.data = self.scaler.transform(origin_data).reshape(
                 self.num_nodes, self.seq_len, self.dims
             )
         else:
-            self.data = self.origin_data
+            self.data = origin_data
 
-        self.data = paddle.to_tensor(self.data, dtype=paddle.get_default_dtype())
+        # Concat day of week and hour of day index
+        index = np.arange(0, self.seq_len, step=1).reshape([1, -1, 1])
+        index = index.repeat(self.num_nodes, axis=0)
+        day_of_week_index = (index // 288) % 7
+        hour_of_day_index = index % 288
 
-    def __getitem__(self, index):
+        self.data = np.concatenate(
+            [self.data, day_of_week_index, hour_of_day_index], axis=-1
+        )
 
-        if self.data_type == "train":
-            index += 0
-        elif self.data_type == "val":
-            index += self.train_size - self.training_args.his_len
-        else:
-            index += self.train_size + self.val_size - self.training_args.his_len
-
-        his_begin = index
-        his_end = his_begin + self.training_args.his_len
-        tgt_begin = his_end
-        tgt_end = tgt_begin + self.training_args.tgt_len
-
-        if "HZME" in self.training_args.dataset_name:
-            if tgt_begin % 288 < 72:
-                offset = 72
-                his_begin += offset
-                his_end += offset
-                tgt_begin += offset
-                tgt_end += offset
-
-        # print(self.data_type, his_begin, his_end, tgt_begin, tgt_end)
-
-        # [N, T, F]
-        his = self.data[:, his_begin:his_end, :]
-        tgt = self.data[:, tgt_begin:tgt_end, :]
-
-        return his, tgt
-
-    def __len__(self):
         if self.data_type == "train":
             data_len = (
                 self.train_size
@@ -207,7 +186,41 @@ class TrafficFlowDataset(Dataset):
         else:
             data_len = self.test_size - self.training_args.tgt_len
 
-        return data_len
+        self.his_pair = []
+        self.tgt_pair = []
+        for i in range(data_len):
+            if self.data_type == "train":
+                i += 0
+            elif self.data_type == "val":
+                i += self.train_size - self.training_args.his_len
+            else:
+                i += self.train_size + self.val_size - self.training_args.his_len
+
+            his_begin = i
+            his_end = his_begin + self.training_args.his_len
+            tgt_begin = his_end
+            tgt_end = tgt_begin + self.training_args.tgt_len
+
+            if "HZME" in self.training_args.dataset_name and (
+                tgt_begin % 288 < 72 or tgt_end % 288 < 72
+            ):
+                continue
+            self.his_pair.append((his_begin, his_end))
+            self.tgt_pair.append((tgt_begin, tgt_end))
+
+    def __getitem__(self, index):
+        his_begin, his_end = self.his_pair[index]
+        tgt_begin, tgt_end = self.tgt_pair[index]
+
+        his = self.data[:, his_begin:his_end, :]
+        tgt = self.data[:, tgt_begin:tgt_end, :]
+        # his_extend = his[:,-12:, :] + (his[:,-1:,:] - his[:,-12:-11,:])
+        # his = np.concatenate([his, his_extend], axis=-2)
+
+        return his, tgt
+
+    def __len__(self):
+        return len(self.his_pair)
 
     def inverse_transform(self, data, axis=None):
         if self.training_args.scale:
@@ -223,14 +236,27 @@ if __name__ == "__main__":
     val_dataset = TrafficFlowDataset(args, "val")
     test_dataset = TrafficFlowDataset(args, "test")
 
-    traing_dataloader = DataLoader(train_dataset, batch_size=10, shuffle=False)
-    val_dataloader = DataLoader(val_dataset, batch_size=10, shuffle=False)
-    test_dataloader = DataLoader(test_dataset, batch_size=10, shuffle=False)
+    traing_dataloader = DataLoader(
+        train_dataset,
+        batch_size=10,
+        shuffle=False,
+        num_workers=4,
+    )
+    val_dataloader = DataLoader(
+        val_dataset,
+        batch_size=10,
+        shuffle=False,
+        num_workers=4,
+    )
+    test_dataloader = DataLoader(
+        test_dataset,
+        batch_size=10,
+        shuffle=False,
+        num_workers=4,
+    )
 
-    print(test_dataloader[0])
-
-    # for item in traing_dataloader:
-    #     print(item[0].shape, item[1].shape)
+    for item in traing_dataloader:
+        print(item[0].shape, item[1].shape)
 
     # for item in val_dataloader:
     #     print(item[0].shape, item[1].shape)

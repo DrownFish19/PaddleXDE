@@ -41,7 +41,7 @@ class DemoUtils:
         parser.add_argument("--adjoint", type=bool, default=False)
 
         # DDE
-        parser.add_argument("--his_len", type=int, default=64)
+        parser.add_argument("--his_len", type=int, default=288)
         self.args = parser.parse_args()
 
     def make_dataloader(self, dataset=None):
@@ -159,20 +159,15 @@ class SimpleDemoData(Dataset):
             self.true_y = odeint(
                 Lambda(self.trans_matrix),
                 self.true_y0.unsqueeze(0),
-                self.t_span.unsqueeze(0),
+                self.t_span,
                 solver=RK4,
             ).squeeze(0)
 
     def __getitem__(self, idx):
-        y0, t_span, tgt_y = self.true_y[idx, :], [], []
-        for i in range(self.config.pred_len):
-            t_span.append(self.t_span[idx + i])
-            tgt_y.append(self.true_y[idx + i, :])
-        try:
-            t_span = paddle.concat(t_span)
-        except:
-            t_span = paddle.stack(t_span)
-        tgt_y = paddle.stack(tgt_y)
+        y0 = self.true_y[idx, :]
+        selcect_idx = paddle.arange(idx, idx + self.config.pred_len)
+        t_span = paddle.index_select(self.t_span, selcect_idx)
+        tgt_y = paddle.index_select(self.true_y, selcect_idx, axis=0)
 
         # [D], [T], [T, D], T is pred_len
         return y0, t_span, tgt_y
