@@ -7,7 +7,7 @@
 
         {
             "name": "current",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
@@ -20,7 +20,7 @@
         },
         {
             "name": "ode_demo",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/example/ode_demo.py",
             "console": "integratedTerminal",
@@ -33,7 +33,7 @@
         },
         {
             "name": "dde_demo",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/example/dde_demo.py",
             "console": "integratedTerminal",
@@ -46,7 +46,7 @@
         },
         {
             "name": "cde_demo",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/example/cde_demo.py",
             "console": "integratedTerminal",
@@ -59,7 +59,7 @@
         },
         {
             "name": "sde_demo",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/example/sde_demo.py",
             "console": "integratedTerminal",
@@ -71,10 +71,10 @@
             }
         },
         {
-            "name": "example_CorrSTN_ddeint",
-            "type": "python",
+            "name": "example_D3STN",
+            "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/example/CorrSTN/train_dde.py",
+            "program": "${workspaceFolder}/example/D3STN/train.py",
             "console": "integratedTerminal",
             "justMyCode": false,
             "args": [],

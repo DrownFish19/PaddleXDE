@@ -9,7 +9,26 @@
     "python.testing.pytestEnabled": false,
     "python.testing.unittestEnabled": true,
     "cSpell.words": [
+        "boltons",
+        "cacheutils",
         "ddeint",
+        "deidx",
+        "dinput",
+        "dlayer",
+        "doutput",
+        "dtype",
+        "einput",
+        "elayer",
+        "enidx",
+        "finepoch",
+        "HZME",
+        "logdir",
+        "optim",
+        "preds",
+        "SCORR",
+        "topk",
+        "trepoch",
+        "visualdl",
         "xdeint"
     ]
 }

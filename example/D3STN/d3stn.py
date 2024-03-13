@@ -14,9 +14,9 @@ from paddlexde.interpolation.interpolate import (
 )
 
 
-class CorrSTN(nn.Layer):
+class D3STN(nn.Layer):
     def __init__(self, training_args, adj_matrix, sc_matrix):
-        super(CorrSTN, self).__init__()
+        super(D3STN, self).__init__()
 
         self.training_args = training_args
 
@@ -177,7 +177,7 @@ if __name__ == "__main__":
     sc_matrix = paddle.to_tensor(norm_adj_matrix(sc_matrix), default_dtype)
 
     nn.initializer.set_global_initializer(XavierUniform(), XavierUniform())
-    model = CorrSTN(args, adj_matrix, sc_matrix)
+    model = D3STN(args, adj_matrix, sc_matrix)
 
     def collate_func(batch_data):
         src_list, tgt_list = [], []

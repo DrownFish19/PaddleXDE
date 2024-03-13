@@ -13,17 +13,17 @@ parser.add_argument(
 parser.add_argument(
     "--data_path",
     type=str,
-    default="example/CorrSTN/TrafficFlowData/HZME_OUTFLOW/HZME_OUTFLOW.npz",
+    default="example/D3STN/TrafficFlowData/HZME_OUTFLOW/HZME_OUTFLOW.npz",
 )
 parser.add_argument(
     "--adj_path",
     type=str,
-    default="example/CorrSTN/TrafficFlowData/HZME_OUTFLOW/HZME_OUTFLOW.csv",
+    default="example/D3STN/TrafficFlowData/HZME_OUTFLOW/HZME_OUTFLOW.csv",
 )
 parser.add_argument(
     "--sc_path",
     type=str,
-    default="example/CorrSTN/TrafficFlowData/HZME_OUTFLOW/SCORR_HZME_OUTFLOW.npy",
+    default="example/D3STN/TrafficFlowData/HZME_OUTFLOW/SCORR_HZME_OUTFLOW.npy",
 )
 parser.add_argument("--split", type=str, default="6:2:2", help="data split")
 parser.add_argument("--scale", type=bool, default=True, help="data norm scale")
@@ -31,7 +31,7 @@ parser.add_argument("--num_nodes", type=int, default=80)
 
 
 # model config
-parser.add_argument("--model_name", type=str, default="DDECorrSTN", help="model name")
+parser.add_argument("--model_name", type=str, default="D3STN", help="model name")
 parser.add_argument("--his_len", type=int, default=288, help="history data length")
 parser.add_argument("--tgt_len", type=int, default=12, help="tgt data length")
 parser.add_argument("--encoder_input_size", type=int, default=1)

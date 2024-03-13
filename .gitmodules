@@ -1,4 +1,3 @@
-[submodule "TrafficFlowData"]
+[submodule "example/D3STN/TrafficFlowData"]
 	path = example/D3STN/TrafficFlowData
 	url = https://github.com/DrownFish19/TrafficFlowData.git
-	branch = master
