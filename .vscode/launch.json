@@ -4,7 +4,6 @@
     // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
-
         {
             "name": "current",
             "type": "debugpy",
@@ -83,6 +82,22 @@
                 "PYTHONPATH": "${workspaceFolder}",
             }
         },
-
+        {
+            "name": "example_D3STN_parallel",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "/usr/local/lib/python3.10/dist-packages/paddle/distributed/launch/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "--gpus",
+                "1",
+                "${workspaceFolder}/example/D3STN/train.py"
+            ],
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0,1",
+                "PYTHONPATH": "${workspaceFolder}",
+            }
+        },
     ]
 }

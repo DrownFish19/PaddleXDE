@@ -7,7 +7,7 @@ import numpy as np
 import paddle
 import paddle.nn as nn
 import paddle.optimizer as optim
-from example.D3STN.d3stn import D3STN, DecoderIndex
+from d3stn import D3STN, DecoderIndex
 from dataset import TrafficFlowDataset
 from paddle.distributed import fleet
 from paddle.io import DataLoader, DistributedBatchSampler
