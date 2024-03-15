@@ -133,47 +133,43 @@ class TrafficFlowDataset(Dataset):
         super().__init__()
         self.training_args = training_args
 
-        # [T, N, D]
-        # D=3 for PEMS04 and PEMS08, D=1 for others
+        # [T, N, D] => [N, T, D]
+        # D=3 for PEMS04 and PEMS08, D=1 for others;
         origin_data = np.load(training_args.data_path)["data"].transpose([1, 0, 2])
-        origin_data = origin_data[:, :, :1]
+        # only the last dim (flow) is used for training and test.
+        origin_data = origin_data[:, :, :1].astype(np.float32)  # [N, T, 1]
         self.num_nodes, self.seq_len, self.dims = origin_data.shape
 
-        self.train_ratio, self.val_ratio, self.test_ratio = map(
-            int, training_args.split.split(":")
+        train_ratio, val_ratio, test_ratio = map(
+            int,
+            training_args.split.split(":"),
         )
-        sum_ratio = self.train_ratio + self.val_ratio + self.test_ratio
-        self.train_ratio, self.val_ratio, self.test_ratio = (
-            self.train_ratio / sum_ratio,
-            self.val_ratio / sum_ratio,
-            self.test_ratio / sum_ratio,
-        )
+        sum_ratio = train_ratio + val_ratio + test_ratio
+        train_ratio = train_ratio / sum_ratio
+        val_ratio = val_ratio / sum_ratio
+        test_ratio = test_ratio / sum_ratio
 
-        self.train_size = int(self.seq_len * self.train_ratio)
-        self.val_size = int(self.seq_len * self.val_ratio)
-        self.test_size = int(self.seq_len * self.test_ratio)
+        self.train_size = int(self.seq_len * train_ratio)
+        self.val_size = int(self.seq_len * val_ratio)
+        self.test_size = int(self.seq_len * test_ratio)
         self.data_type = data_type
 
         # Scaler
         if training_args.scale:
             self.scaler = ScalerMinMax()
-            train_data = origin_data[: self.train_size, :, :]
+            train_data = origin_data[:, : self.train_size, :]
             self.scaler.fit(train_data.reshape(-1, train_data.shape[-1]))
             self.data = self.scaler.transform(origin_data).reshape(
-                self.num_nodes, self.seq_len, self.dims
+               self.num_nodes, self.seq_len,  self.dims
             )
         else:
             self.data = origin_data
 
         # Concat day of week and hour of day index
-        index = np.arange(0, self.seq_len, step=1).reshape([1, -1, 1])
-        index = index.repeat(self.num_nodes, axis=0)
-        day_of_week_index = (index // 288) % 7
-        hour_of_day_index = index % 288
-
-        self.data = np.concatenate(
-            [self.data, day_of_week_index, hour_of_day_index], axis=-1
-        )
+        index = np.arange(0, self.seq_len, step=1).reshape([1, -1])
+        index = index.repeat(self.num_nodes, axis=0) # [N, T]
+        self.day_of_week_index = (index // 288) % 7
+        self.minute_of_day_index = index % 288
 
         if self.data_type == "train":
             data_len = (
@@ -213,11 +209,20 @@ class TrafficFlowDataset(Dataset):
         tgt_begin, tgt_end = self.tgt_pair[index]
 
         his = self.data[:, his_begin:his_end, :]
+        his_day_of_week_index = self.day_of_week_index[:, his_begin:his_end]
+        his_minute_of_day_index = self.minute_of_day_index[:, his_begin:his_end]
         tgt = self.data[:, tgt_begin:tgt_end, :]
-        # his_extend = his[:,-12:, :] + (his[:,-1:,:] - his[:,-12:-11,:])
-        # his = np.concatenate([his, his_extend], axis=-2)
+        tgt_day_of_week_index = self.day_of_week_index[:, tgt_begin:tgt_end]
+        tgt_minute_of_day_index = self.minute_of_day_index[:, tgt_begin:tgt_end]
 
-        return his, tgt
+        return (
+            his,
+            his_day_of_week_index,
+            his_minute_of_day_index,
+            tgt,
+            tgt_day_of_week_index,
+            tgt_minute_of_day_index,
+        )
 
     def __len__(self):
         return len(self.his_pair)
@@ -227,39 +232,3 @@ class TrafficFlowDataset(Dataset):
             return self.scaler.inverse_transform(data, axis)
         else:
             return data
-
-
-if __name__ == "__main__":
-    from args import args
-
-    train_dataset = TrafficFlowDataset(args, "train")
-    val_dataset = TrafficFlowDataset(args, "val")
-    test_dataset = TrafficFlowDataset(args, "test")
-
-    traing_dataloader = DataLoader(
-        train_dataset,
-        batch_size=10,
-        shuffle=False,
-        num_workers=4,
-    )
-    val_dataloader = DataLoader(
-        val_dataset,
-        batch_size=10,
-        shuffle=False,
-        num_workers=4,
-    )
-    test_dataloader = DataLoader(
-        test_dataset,
-        batch_size=10,
-        shuffle=False,
-        num_workers=4,
-    )
-
-    for item in traing_dataloader:
-        print(item[0].shape, item[1].shape)
-
-    # for item in val_dataloader:
-    #     print(item[0].shape, item[1].shape)
-
-    # for item in test_dataloader:
-    #     print(item[0].shape, item[1].shape)

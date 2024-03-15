@@ -120,7 +120,7 @@ class FixedSolver(metaclass=abc.ABCMeta):
         assert paddle.equal_all(time_grid[-1], t_span[-1])
 
         # sol solution pred_len * [batch_size, 1, dims]
-        sol = [self.y0]
+        sol = [] # TODO:remove y0 as the first item
         y0 = self.y0
 
         for i in range(1, pred_len):

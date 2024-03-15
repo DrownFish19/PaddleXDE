@@ -135,10 +135,10 @@ class CubicHermiteSpline(InterpolationBase):
         """_summary_
 
         Args:
-            series (_type_): [B, T, D]
+            series (_type_): [B, X, T, D]
             t (_type_): [T]
 
-            Note: B can be ignored
+            Note: B and X can be ignored
 
         Returns:
             _type_: _description_

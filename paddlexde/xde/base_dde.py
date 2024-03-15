@@ -24,18 +24,29 @@ class BaseDDE(BaseXDE):
         lags: Union[list, paddle.Tensor],
         his: paddle.Tensor,
         his_span: paddle.Tensor,
-        his_processed: bool = False,
+        **kwargs,
     ):
+        """_summary_
+
+        Args:
+            func (Union[nn.Layer, callable]): the differential equation func
+                                                which input include delay, y0 and
+                                                kwargs
+            y0 (Union[tuple, paddle.Tensor]): input data
+            t_span (Union[list, paddle.Tensor]): output timestamp span
+            lags (Union[list, paddle.Tensor]): input delay index, 
+                                                which is used to make the delay data
+            his (paddle.Tensor): [B,N,T,D] input all delay
+            his_span (paddle.Tensor): all delay timestamp
+        """
         super(BaseDDE, self).__init__(name="DDE", var_nums=1, y0=y0, t_span=t_span)
 
         self.func = func
         self.lags = lags
-        if not his_processed:
-            self.y_lags = HistoryIndex.apply(lags=lags, his=his, his_span=his_span)
-        else:
-            self.y_lags = his
+        self.y_lags = HistoryIndex.apply(lags=lags, his=his, his_span=his_span)
         self.his = his
         self.his_span = his_span
+        self.kwargs = {**kwargs, "lags": lags}
         self.init_y0(y0)
 
     def init_y0(self, input):
@@ -49,7 +60,7 @@ class BaseDDE(BaseXDE):
         # input_history = paddle.index_select(self.history, self.lags)
 
         # y_lags [B, T, D]  T是选择后的序列长度
-        dy = self.func(self.y_lags, y0)
+        dy = self.func(self.y_lags, y0, **self.kwargs)
         return dy
 
     def fuse(self, dy, dt, y0):

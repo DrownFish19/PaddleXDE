@@ -78,6 +78,7 @@
             "justMyCode": false,
             "args": [],
             "env": {
+                "GLOG_minloglevel":"10000",
                 "CUDA_VISIBLE_DEVICES": "0",
                 "PYTHONPATH": "${workspaceFolder}",
             }

@@ -14,11 +14,11 @@ def ddeint(
     his,
     his_span,
     solver,
-    his_processed=False,
     rtol=1e-7,
     atol=1e-9,
     options: object = {"norm": _rms_norm},
     fixed_solver_interp="linear",
+    **kwargs,
 ):
     """Integrate a system of delay differential equations.
 
@@ -36,7 +36,7 @@ def ddeint(
         lags=lags,
         his=his,
         his_span=his_span,
-        his_processed=his_processed,
+        **kwargs,
     )
 
     s = solver(

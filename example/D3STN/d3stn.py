@@ -1,17 +1,19 @@
 from copy import deepcopy
 
 import paddle
+import paddle.autograd as autograd
+import paddle.nn as nn
 from attention import MultiHeadAttentionAwareTemporalContext
-from embedding import TemporalSectionEmbedding
+from embedding import TrafficFlowEmbedding
 from endecoder import Decoder, DecoderLayer, Encoder, EncoderLayer
 from graphconv import SpatialAttentionGCN
-from paddle import autograd, nn
-
+from paddlexde.functional import ddeint
 from paddlexde.interpolation.interpolate import (
     BezierSpline,
     CubicHermiteSpline,
     LinearInterpolation,
 )
+from paddlexde.solver.fixed_solver import Euler, Midpoint, RK4
 
 
 class D3STN(nn.Layer):
@@ -20,14 +22,16 @@ class D3STN(nn.Layer):
 
         self.training_args = training_args
 
-        self.encoder_dense = nn.Linear(
-            training_args.encoder_input_size, training_args.d_proj
-        )
-        self.decoder_dense = nn.Linear(
-            training_args.decoder_input_size, training_args.d_proj
-        )
-        self.temporal_section_week = TemporalSectionEmbedding(training_args, 7, axis=1)
-        self.temporal_section_day = TemporalSectionEmbedding(training_args, 288, axis=2)
+        # 输出当前微分方程使用的优化器函数
+        if self.training_args.solver == "euler":
+            self.dde_solver = Euler
+        elif self.training_args.solver == "midpoint":
+            self.dde_solver = Midpoint
+        elif self.training_args.solver == "rk4":
+            self.dde_solver = RK4
+
+        self.encoder_embedding = TrafficFlowEmbedding(args=training_args)
+        self.decoder_embedding = TrafficFlowEmbedding(args=training_args)
 
         attn_ss = MultiHeadAttentionAwareTemporalContext(
             args=training_args,
@@ -60,7 +64,7 @@ class D3STN(nn.Layer):
             self_attn=deepcopy(attn_ss),
             gcn=deepcopy(spatial_attention_gcn),
             dropout=training_args.dropout,
-            residual_connection=True,
+            residual_connection=False,
             use_layer_norm=True,
         )
         decoderLayer = DecoderLayer(
@@ -69,7 +73,7 @@ class D3STN(nn.Layer):
             src_attn=deepcopy(attn_st),
             gcn=deepcopy(spatial_attention_gcn),
             dropout=training_args.dropout,
-            residual_connection=True,
+            residual_connection=False,
             use_layer_norm=True,
         )
 
@@ -80,27 +84,61 @@ class D3STN(nn.Layer):
             training_args.d_model, training_args.decoder_output_size
         )
 
-    def encode(self, src):
-        src_dense = self.encoder_dense(src[..., :1])
-        week_embedding = self.temporal_section_week(src)
-        day_embedding = self.temporal_section_day(src)
-        embed = paddle.concat([src_dense, week_embedding, day_embedding], axis=-1)
-
-        encoder_output = self.encoder(embed)
+    def encode(self, src, d_idx, m_idx):
+        src_dense = self.encoder_embedding(src, d_idx, m_idx)
+        encoder_output = self.encoder(src_dense)
         return encoder_output
 
-    def decode(self, encoder_output, tgt):
-        tgt_dense = self.decoder_dense(tgt[..., :1])
-        week_embedding = self.temporal_section_week(tgt)
-        day_embedding = self.temporal_section_day(tgt)
-        embed = paddle.concat([tgt_dense, week_embedding, day_embedding], axis=-1)
-
-        decoder_output = self.decoder(x=embed, memory=encoder_output)
+    def decode(self, encoder_output, tgt, d_idx, m_idx):
+        tgt_dense = self.decoder_embedding(tgt, d_idx, m_idx)
+        decoder_output = self.decoder(x=tgt_dense, memory=encoder_output)
         return self.generator(decoder_output)
 
-    def forward(self, src, tgt):
-        encoder_output = self.encode(src)
-        output = self.decode(encoder_output, tgt)
+    def endecode(
+        self,
+        src,
+        tgt,
+        **kwargs,
+    ):
+        lags = paddle.cast(kwargs["lags"], dtype=paddle.int64)
+        lags = paddle.clip(lags, min=0, max=self.training_args.his_len - 1)
+        src_d_idx = paddle.index_select(kwargs["src_d_idx"], lags, axis=2)
+        src_m_idx = paddle.index_select(kwargs["src_m_idx"], lags, axis=2)
+
+        memory = self.encode(src, src_d_idx, src_m_idx)
+        output = self.decode(memory, tgt, kwargs["tgt_d_idx"], kwargs["tgt_m_idx"])
+        return output
+
+    def forward(
+        self,
+        src: paddle.Tensor,
+        src_idx: paddle.Tensor,
+        tgt: paddle.Tensor,
+        **kwargs,
+    ):
+        """_summary_
+
+        Args:
+            src (_type_): 作为微分方程中encoder输入
+            tgt (_type_): 作为微分方程中decoder输入
+
+        Returns:
+            _type_: 预测结果
+        """
+        pred_span = paddle.arange(1 + 1)
+        his_span = paddle.arange(self.training_args.his_len)
+        output = ddeint(
+            func=self.endecode,
+            y0=tgt,
+            t_span=pred_span,
+            lags=src_idx,
+            his=src,
+            his_span=his_span,
+            solver=self.dde_solver,
+            fixed_solver_interp="",
+            **kwargs,
+        )
+
         return output
 
 
@@ -151,76 +189,3 @@ class DecoderIndex(autograd.PyLayer):
         grad = paddle.sum(grad, axis=[0, 1, 3])
         return grad, None, None
         # return None, grad_y_lags * derivative_lags, None, None, None
-
-
-if __name__ == "__main__":
-    import os
-
-    # 将日志级别设置为6
-    os.environ["GLOG_v"] = "6"
-    import numpy as np
-    import paddle.nn as nn
-    from args import args
-    from dataset import TrafficFlowDataset
-    from paddle.io import DataLoader
-    from paddle.nn.initializer import XavierUniform
-    from utils import get_adjacency_matrix_2direction, norm_adj_matrix
-
-    from paddlexde.functional import ddeint
-    from paddlexde.solver import Euler
-
-    default_dtype = paddle.get_default_dtype()
-    adj_matrix, _ = get_adjacency_matrix_2direction(args.adj_path, 80)
-    adj_matrix = paddle.to_tensor(norm_adj_matrix(adj_matrix), default_dtype)
-
-    sc_matrix = np.load(args.sc_path)[0, :, :]
-    sc_matrix = paddle.to_tensor(norm_adj_matrix(sc_matrix), default_dtype)
-
-    nn.initializer.set_global_initializer(XavierUniform(), XavierUniform())
-    model = D3STN(args, adj_matrix, sc_matrix)
-
-    def collate_func(batch_data):
-        src_list, tgt_list = [], []
-
-        for item in batch_data:
-            if item[2]:
-                src_list.append(item[0])
-                tgt_list.append(item[1])
-
-        if len(src_list) == 0:
-            src_list.append(item[0])
-            tgt_list.append(item[1])
-
-        return paddle.stack(src_list), paddle.stack(tgt_list)
-
-    train_dataset = TrafficFlowDataset(args, "train")
-    train_dataloader = DataLoader(
-        train_dataset, batch_size=args.batch_size, collate_fn=collate_func
-    )
-    src, tgt = next(iter(train_dataloader))
-    src_index = paddle.randint(shape=[12], high=src.shape[-2], low=0)
-    src_input = paddle.index_select(src, src_index, axis=-2)
-    decoder_input = paddle.concat([src[:, :, -1:, :], tgt[:, :, :-1, :]], axis=-2)
-
-    # 1. call model foreward  (choose 1 or 2)
-    preds = model(src_index, src_input, None, decoder_input)
-    preds.backward()
-
-    # 2. call ddeint (choose 1 or 2)
-    y0 = decoder_input
-    preds = ddeint(
-        func=model,
-        y0=y0,
-        t_span=paddle.arange(args.tgt_len + 1),
-        lags=src_index,
-        his=src,
-        his_span=paddle.arange(args.his_len),
-        solver=Euler,
-    )
-    preds = preds[:, :, -args.tgt_len :, :]
-    preds.backward()
-
-    from paddleviz.paddleviz.viz import make_graph
-
-    dot = make_graph(preds, dpi="600")
-    dot.render("viz-result.gv", format="png", view=False)
