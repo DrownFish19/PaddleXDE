@@ -1,4 +1,3 @@
-import contextlib
 import os
 import random
 import time
@@ -11,11 +10,8 @@ import paddle.optimizer as optim
 import sklearn.metrics as metrics
 import visualdl
 from args import args
-from d3stn import D3STN, DecoderIndex
+from d3stn import D3STN
 from dataset import TrafficFlowDataset
-from paddlexde.functional import ddeint
-from paddlexde.solver.fixed_solver import RK4, Euler, Midpoint
-from paddlexde.xde.base_dde import HistoryIndex
 from utils import (
     CosineAnnealingWithWarmupDecay,
     Logger,
@@ -23,6 +19,8 @@ from utils import (
     masked_mape_np,
     norm_adj_matrix,
 )
+
+from paddlexde.solver.fixed_solver import RK4, Euler, Midpoint
 
 
 class Trainer:
@@ -77,8 +75,6 @@ class Trainer:
         )
         self.logger.info(f"state_random: {state_random[1][0]}")
         self.logger.info(f"state_np: {state_np[1][0]}")
-
-        self.finetune = False
 
         self._build_data()  # 创建训练数据
         self._build_model()  # 创建模型
@@ -283,8 +279,9 @@ class Trainer:
 
         s_time = time.time()
         best_eval_loss, best_epoch, global_step = np.inf, 0, 0
-        epoch = self.training_args.start_epoch
-        while epoch < self.training_args.train_epochs:
+        for epoch in range(
+            self.training_args.start_epoch, self.training_args.train_epochs
+        ):
             tr_s_time = time.time()
             epoch_step = 0
             self.lr_scheduler.step()
@@ -294,10 +291,12 @@ class Trainer:
                 self.writer.add_scalar("train/lr", self.optimizer.get_lr(), global_step)
                 epoch_step += 1
                 global_step += 1
-                self.logger.info(f"train: {global_step} loss: {training_loss.item()}")
+                # self.logger.info(f"train: {global_step} loss: {training_loss.item()}")
             self.logger.info(f"learning_rate: {self.optimizer.get_lr()}")
-            self.logger.info(f"epoch: {epoch}, train time cost:{time() - tr_s_time}")
-            self.logger.info(f"epoch: {epoch}, total time cost:{time() - s_time}")
+            self.logger.info(
+                f"epoch: {epoch}, train time cost:{time.time() - tr_s_time}"
+            )
+            self.logger.info(f"epoch: {epoch}, total time cost:{time.time() - s_time}")
 
             # apply model on the validation data set
             eval_loss = self.compute_eval_loss(epoch)
@@ -312,14 +311,9 @@ class Trainer:
         self.logger.info(f"best epoch: {best_epoch}")
         self.logger.info("apply the best val model on the test dataset ...")
 
-        self.load()
-        self.compute_test_loss(epoch)
-
-    def _init_finetune(self):
+    def finetune(self):
         self.logger.info("Start FineTune Training")
         self.load()
-
-        self.early_stopping.reset()
 
         self.lr_scheduler = CosineAnnealingWithWarmupDecay(
             max_lr=1,
@@ -351,7 +345,40 @@ class Trainer:
             multi_precision=True,
         )
 
-        self.finetune = True
+        s_time = time.time()
+        best_eval_loss, best_epoch, global_step = np.inf, 0, 0
+        for epoch in range(
+            self.training_args.train_epochs,
+            self.training_args.train_epochs + self.training_args.finetune_epochs,
+        ):
+            tr_s_time = time.time()
+            epoch_step = 0
+            self.lr_scheduler.step()
+            for batch_index, batch_data in enumerate(self.train_dataloader):
+                _, training_loss = self.train_one_step(batch_data)
+                self.writer.add_scalar("train/loss", training_loss, global_step)
+                self.writer.add_scalar("train/lr", self.optimizer.get_lr(), global_step)
+                epoch_step += 1
+                global_step += 1
+                # self.logger.info(f"train: {global_step} loss: {training_loss.item()}")
+            self.logger.info(f"learning_rate: {self.optimizer.get_lr()}")
+            self.logger.info(
+                f"epoch: {epoch}, train time cost:{time.time() - tr_s_time}"
+            )
+            self.logger.info(f"epoch: {epoch}, total time cost:{time.time() - s_time}")
+
+            # apply model on the validation data set
+            eval_loss = self.compute_eval_loss(epoch)
+            if eval_loss < best_eval_loss:
+                best_eval_loss = eval_loss
+                best_epoch = epoch
+                self.logger.info(f"best_epoch: {best_epoch}")
+                self.logger.info(f"eval_loss: {float(eval_loss)}")
+                self.compute_test_loss(epoch)
+                self.save(epoch=epoch)
+
+        self.logger.info(f"best epoch: {best_epoch}")
+        self.logger.info("apply the best val model on the test dataset ...")
 
     def train_one_step(self, batch_data):
         self.net.train()
@@ -371,51 +398,6 @@ class Trainer:
         self.optimizer.step()
         self.optimizer.clear_grad()
 
-        return preds, loss
-
-    def finetune_one_step(self, batch_data):
-        """_summary_
-
-        Args:
-            src (_type_): [B,N,T,D]
-            tgt (_type_): [B,N,T,D]
-
-        Returns:
-            _type_: _description_
-        """
-        self.net.train()
-
-        y0 = DecoderIndex.apply(
-            lags=self.decoder_idx,
-            his=src,
-            his_span=paddle.arange(self.training_args.his_len),
-        )
-        encoder_input = HistoryIndex.apply(
-            lags=self.encoder_idx,
-            his=src,
-            his_span=paddle.arange(self.training_args.his_len),
-        )
-        encoder_output = self.net.encode(encoder_input)
-
-        preds = ddeint(
-            func=self.net.decode,
-            y0=y0,
-            t_span=paddle.arange(1 + 1),
-            lags=None,
-            his=encoder_output,
-            his_span=None,
-            solver=self.dde_solver,
-            his_processed=True,
-            fixed_solver_interp="",
-        )
-        pred_len = y0.shape[-2]
-        preds = preds[:, :, -pred_len:, :1]
-
-        loss = self.criterion(preds, tgt[..., :1])
-
-        loss.backward()
-        self.optimizer.step()
-        self.optimizer.clear_grad()
         return preds, loss
 
     def eval_one_step(self, batch_data):
@@ -455,12 +437,8 @@ class Trainer:
             all_eval_loss = paddle.zeros([1], dtype=paddle.get_default_dtype())
             start_time = time.time()
             for batch_index, batch_data in enumerate(self.eval_dataloader):
-                src, tgt = batch_data
-                src = paddle.cast(src, paddle.get_default_dtype())
-                tgt = paddle.cast(tgt, paddle.get_default_dtype())
-                predict_output, eval_loss = self.eval_one_step(src, tgt)
+                predict_output, eval_loss = self.eval_one_step(batch_data)
                 self.writer.add_scalar(f"eval/loss-{epoch}", eval_loss, batch_index)
-
                 all_eval_loss += eval_loss
 
             eval_loss = all_eval_loss / len(self.eval_dataloader)
@@ -470,16 +448,18 @@ class Trainer:
 
     def compute_test_loss(self, epoch=-1):
         with paddle.no_grad():
-            preds = []
-            tgts = []
+            preds, tgts = [], []
             start_time = time.time()
+            all_test_loss = paddle.zeros([1], dtype=paddle.get_default_dtype())
             for batch_index, batch_data in enumerate(self.test_dataloader):
                 predict_output, test_loss = self.test_one_step(batch_data)
                 self.writer.add_scalar(f"test/loss-{epoch}", test_loss, batch_index)
-
+                all_test_loss += test_loss
                 preds.append(predict_output)
                 tgts.append(batch_data[3])
+            test_loss = all_test_loss / len(self.test_dataloader)
             self.logger.info(f"test time on whole data: {time.time() - start_time} s")
+            self.logger.info(f"test_loss: {float(test_loss)}")
 
             preds = paddle.concat(preds, axis=0)  # [B,N,T,1]
             trues = paddle.concat(tgts, axis=0)  # [B,N,T,F]
@@ -491,13 +471,6 @@ class Trainer:
             self.logger.info(f"preds: {preds.shape}")
             self.logger.info(f"tgts: {trues.shape}")
 
-            for index in range(trues.shape[0]):
-                scalar_dict = {
-                    "true": trues[index, 0, 6, 0],
-                    "pred": preds[index, 0, 6, 0],
-                }
-                self.writer.add_scalars(f"test/line-{epoch}", scalar_dict, index)
-
             # 计算误差
             excel_list = []
             prediction_length = trues.shape[2]
@@ -506,7 +479,10 @@ class Trainer:
                 assert preds.shape[0] == trues.shape[0]
                 mae = metrics.mean_absolute_error(trues[:, :, i, 0], preds[:, :, i, 0])
                 rmse = (
-                    metrics.mean_squared_error(trues[:, :, i, 0], preds[:, :, i, 0])
+                    metrics.mean_squared_error(
+                        trues[:, :, i, 0],
+                        preds[:, :, i, 0],
+                    )
                     ** 0.5
                 )
                 mape = masked_mape_np(trues[:, :, i, 0], preds[:, :, i, 0], 0)
@@ -520,7 +496,10 @@ class Trainer:
                 trues.reshape(-1, 1), preds.reshape(-1, 1)
             )
             rmse = (
-                metrics.mean_squared_error(trues.reshape(-1, 1), preds.reshape(-1, 1))
+                metrics.mean_squared_error(
+                    trues.reshape(-1, 1),
+                    preds.reshape(-1, 1),
+                )
                 ** 0.5
             )
             mape = masked_mape_np(trues.reshape(-1, 1), preds.reshape(-1, 1), 0)
@@ -538,4 +517,5 @@ class Trainer:
 if __name__ == "__main__":
     trainer = Trainer(training_args=args)
     trainer.train()
+    trainer.finetune()
     trainer.run_test()

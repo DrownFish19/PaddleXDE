@@ -7,13 +7,14 @@ from attention import MultiHeadAttentionAwareTemporalContext
 from embedding import TrafficFlowEmbedding
 from endecoder import Decoder, DecoderLayer, Encoder, EncoderLayer
 from graphconv import SpatialAttentionGCN
+
 from paddlexde.functional import ddeint
 from paddlexde.interpolation.interpolate import (
     BezierSpline,
     CubicHermiteSpline,
     LinearInterpolation,
 )
-from paddlexde.solver.fixed_solver import Euler, Midpoint, RK4
+from paddlexde.solver.fixed_solver import RK4, Euler, Midpoint
 
 
 class D3STN(nn.Layer):
@@ -64,7 +65,7 @@ class D3STN(nn.Layer):
             self_attn=deepcopy(attn_ss),
             gcn=deepcopy(spatial_attention_gcn),
             dropout=training_args.dropout,
-            residual_connection=False,
+            residual_connection=True,
             use_layer_norm=True,
         )
         decoderLayer = DecoderLayer(
@@ -73,7 +74,7 @@ class D3STN(nn.Layer):
             src_attn=deepcopy(attn_st),
             gcn=deepcopy(spatial_attention_gcn),
             dropout=training_args.dropout,
-            residual_connection=False,
+            residual_connection=True,
             use_layer_norm=True,
         )
 
