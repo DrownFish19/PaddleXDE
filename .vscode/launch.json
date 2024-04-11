@@ -6,7 +6,7 @@
     "configurations": [
         {
             "name": "current",
-            "type": "debugpy",
+            "type": "python",
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
@@ -19,7 +19,7 @@
         },
         {
             "name": "ode_demo",
-            "type": "debugpy",
+            "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/example/ode_demo.py",
             "console": "integratedTerminal",
@@ -32,7 +32,7 @@
         },
         {
             "name": "dde_demo",
-            "type": "debugpy",
+            "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/example/dde_demo.py",
             "console": "integratedTerminal",
@@ -45,7 +45,7 @@
         },
         {
             "name": "cde_demo",
-            "type": "debugpy",
+            "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/example/cde_demo.py",
             "console": "integratedTerminal",
@@ -58,7 +58,7 @@
         },
         {
             "name": "sde_demo",
-            "type": "debugpy",
+            "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/example/sde_demo.py",
             "console": "integratedTerminal",
@@ -71,7 +71,7 @@
         },
         {
             "name": "example_D3STN",
-            "type": "debugpy",
+            "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/example/D3STN/train.py",
             "console": "integratedTerminal",
@@ -85,7 +85,7 @@
         },
         {
             "name": "example_D3STN_parallel",
-            "type": "debugpy",
+            "type": "python",
             "request": "launch",
             "program": "/usr/local/lib/python3.10/dist-packages/paddle/distributed/launch/main.py",
             "console": "integratedTerminal",
