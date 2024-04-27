@@ -26,7 +26,7 @@ class TemporalPositionalEmbedding(nn.Layer):
         super(TemporalPositionalEmbedding, self).__init__()
         self.args = args
         self.dropout = nn.Dropout(p=args.dropout)
-        self.max_len = max(args.his_len, args.tgt_len)
+        self.max_len = args.his_len + args.tgt_len
         self.d_model = int(args.d_model / 4)
         # computing the positional encodings once in log space
         pe = paddle.zeros([self.max_len, self.d_model])
@@ -43,7 +43,7 @@ class TemporalPositionalEmbedding(nn.Layer):
         # This is typically used to register a buffer that should not to be considered a model parameter.
         self.register_buffer("pe", pe)
 
-    def forward(self, x):
+    def forward(self, x, lookup_index=None):
         """
 
         Args:
@@ -52,7 +52,8 @@ class TemporalPositionalEmbedding(nn.Layer):
         Returns:(1, 1, T, D)
 
         """
-        lookup_index = paddle.arange(x.shape[-2])
+        if lookup_index is None:
+            lookup_index = paddle.arange(x.shape[-2])
         embed = paddle.index_select(self.pe, lookup_index, axis=-2)
         return embed
 
@@ -65,15 +66,13 @@ class TemporalSectionEmbedding(nn.Layer):
         """
         super(TemporalSectionEmbedding, self).__init__()
         self.embedding_day = paddle.nn.Embedding(7, int(args.d_model / 8))
-        self.embedding_minute = paddle.nn.Embedding(288, int(args.d_model / 8))
+        self.embedding_hour = paddle.nn.Embedding(24, int(args.d_model / 8))
 
-    def forward(self, d_idx, m_idx):
-        d_idx = paddle.cast(d_idx, dtype=paddle.int64)
-        m_idx = paddle.clip(m_idx, min=0, max=self.embedding_minute._num_embeddings - 1)
-        m_idx = paddle.cast(m_idx, dtype=paddle.int64)
+    def forward(self, day_idx, hour_idx):
+        day_idx = paddle.cast(day_idx, dtype=paddle.int64)
+        hour_idx = paddle.cast(hour_idx, dtype=paddle.int64)
         embed = paddle.concat(
-            [self.embedding_day(d_idx), self.embedding_minute(m_idx)],
-            axis=-1,
+            [self.embedding_day(day_idx), self.embedding_hour(hour_idx)], axis=-1
         )
         return embed
 
@@ -94,11 +93,11 @@ class TrafficFlowEmbedding(nn.Layer):
         self.temporal_section_embedding = TemporalSectionEmbedding(args=args)
         self.layer_norm = nn.LayerNorm(self.args.d_model)
 
-    def forward(self, x, d_idx, m_idx):
+    def forward(self, x, lookup_index, day_idx, hour_idx):
         x = self.dense(x)
         spatial_emb = self.spatial_position_embedding(x)
-        temporal_emb = self.temporal_position_embedding(x)
-        section_emb = self.temporal_section_embedding(d_idx, m_idx)
+        temporal_emb = self.temporal_position_embedding(x, lookup_index)
+        section_emb = self.temporal_section_embedding(day_idx, hour_idx)
 
         spatial_emb = paddle.expand_as(spatial_emb, x)
         temporal_emb = paddle.expand_as(temporal_emb, x)

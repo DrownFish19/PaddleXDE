@@ -1,13 +1,8 @@
 from typing import Union
 
 import paddle
-from paddle import autograd, nn
+from paddle import nn
 
-from ..interpolation.interpolate import (
-    BezierSpline,
-    CubicHermiteSpline,
-    LinearInterpolation,
-)
 from .base_xde import BaseXDE
 
 
@@ -18,12 +13,11 @@ class BaseDDE(BaseXDE):
 
     def __init__(
         self,
-        func: Union[nn.Layer, callable],
+        drift_f: Union[nn.Layer, callable],
+        delay_f: Union[nn.Layer, callable],
         y0: Union[tuple, paddle.Tensor],
-        t_span: Union[list, paddle.Tensor],
-        lags: Union[list, paddle.Tensor],
-        his: paddle.Tensor,
-        his_span: paddle.Tensor,
+        delay: Union[tuple, paddle.Tensor],
+        y_t_span: Union[list, paddle.Tensor],
         **kwargs,
     ):
         """_summary_
@@ -34,33 +28,28 @@ class BaseDDE(BaseXDE):
                                                 kwargs
             y0 (Union[tuple, paddle.Tensor]): input data
             t_span (Union[list, paddle.Tensor]): output timestamp span
-            lags (Union[list, paddle.Tensor]): input delay index, 
+            lags (Union[list, paddle.Tensor]): input delay index,
                                                 which is used to make the delay data
             his (paddle.Tensor): [B,N,T,D] input all delay
             his_span (paddle.Tensor): all delay timestamp
         """
-        super(BaseDDE, self).__init__(name="DDE", var_nums=1, y0=y0, t_span=t_span)
+        super(BaseDDE, self).__init__(name="DDE", var_nums=1)
 
-        self.func = func
-        self.lags = lags
-        self.y_lags = HistoryIndex.apply(lags=lags, his=his, his_span=his_span)
-        self.his = his
-        self.his_span = his_span
-        self.kwargs = {**kwargs, "lags": lags}
-        self.init_y0(y0)
+        self.drift_f = drift_f
+        self.delay_f = delay_f
+        self.input_delay = delay
+        self.input_y0 = y0
+        self.y_t_span = y_t_span
+        self.kwargs = kwargs
 
-    def init_y0(self, input):
-        self.y0 = input
-
-    def handle(self, h, ts):
-        pass
+        self.delays_hidden_state = self.delay_f(self.input_delay, **kwargs)
 
     def move(self, t0, dt, y0):
         # self.init_lags()
         # input_history = paddle.index_select(self.history, self.lags)
 
         # y_lags [B, T, D]  T是选择后的序列长度
-        dy = self.func(self.y_lags, y0, **self.kwargs)
+        dy = self.drift_f(self.delays_hidden_state, y0, t0, t0 + dt, **self.kwargs)
         return dy
 
     def fuse(self, dy, dt, y0):
@@ -75,65 +64,3 @@ class BaseDDE(BaseXDE):
         dy = self.func(t, y0, lags, y_lags)
         # dy = self.flatten(dy)
         return dy
-
-    def init_lags(self):
-        # TODO 不同时刻初始化不同lags
-        pass
-
-    def flatten(self, input):
-        return input
-
-    def unflatten(self, input, length):
-        return input
-
-    def on_integrate_step_end(self, y0=None, y1=None, t0=None, t1=None):
-        return super().on_integrate_step_end(y0, y1, t0, t1)
-
-
-class HistoryIndex(autograd.PyLayer):
-    @staticmethod
-    def forward(ctx, lags, his, his_span, interp_method="cubic"):
-        """
-        计算给定输入序列的未来值，并返回计算结果。
-        传入lags, history,
-        计算序列位置对应位置的梯度, 并保存至backward
-
-        Args:
-            ctx (): 动态图计算上下文对象。
-            xde (): 未来值的输入序列, BaseXDE类型。
-            lags (paddle.Tensor): 用多少个过去的值来计算未来的这个值（未来值的滞后量）。
-            history (paddle.Tensor): 用于计算未来值的过去输入序列。
-            interp_method (str, optional): 插值方法，取值为 "linear"（线性插值）,"cubic"（三次样条插值）或 "bez"（贝塞尔插值）。默认为 "linear"。
-
-        Returns:
-            paddle.Tensor: 计算结果，形状为 [batch_size, len_t, dims]。
-
-        Raises:
-            NotImplementedError: 如果interp_method不是上述三种情况之一, 将抛出NotImplementedError异常。
-        """
-        with paddle.no_grad():
-            if interp_method == "linear":
-                interp = LinearInterpolation(his, his_span)
-            elif interp_method == "cubic":
-                interp = CubicHermiteSpline(his, his_span)
-            elif interp_method == "bez":
-                interp = BezierSpline(his, his_span)
-            else:
-                raise NotImplementedError
-
-            y_lags = interp.evaluate(lags)
-
-            derivative_lags = interp.derivative(lags)
-            ctx.save_for_backward(derivative_lags)
-
-        return y_lags
-
-    @staticmethod
-    def backward(ctx, grad_y):
-        # 计算history相应的梯度，并提取forward中保存的梯度，用于计算lag的梯度
-        # 在计算的过程中，无需更新history，仅更新lags即可
-        (derivative_lags,) = ctx.saved_tensor()
-        grad = grad_y * derivative_lags
-        grad = paddle.sum(grad, axis=[0, 1, 3])
-        return grad, None, None
-        # return None, grad_y_lags * derivative_lags, None, None, None

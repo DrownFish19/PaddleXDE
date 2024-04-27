@@ -176,6 +176,7 @@ class MultiHeadAttentionAwareTemporalContext(nn.Layer):
         query,
         key,
         value,
+        past_key_values=None,
         is_mask=False,
     ):
         """
@@ -234,8 +235,16 @@ class MultiHeadAttentionAwareTemporalContext(nn.Layer):
         value = value.reshape(multi_head_shape).transpose(perm)
 
         # [B,N,H,T,d]
+        if past_key_values is not None:
+            key = paddle.concat([past_key_values[0], key], axis=3)
+            value = paddle.concat([past_key_values[1], value], axis=3)
+            past_key_values = (key, value)
         x = self.attention(query, key, value, mask=mask, dropout=self.dropout)
 
         # [B,N,T,D]
         x = x.transpose(perm).reshape([B, N, -1, self.heads * self.head_dim])
-        return self.out_conv(x)
+
+        if past_key_values is not None:
+            return self.out_conv(x), past_key_values
+        else:
+            return self.out_conv(x)

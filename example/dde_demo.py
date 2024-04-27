@@ -1,15 +1,16 @@
 import paddle
 import paddle.nn as nn
-from demo_utils import DemoUtils, SimpleDemoData
 
-from paddlexde.functional import ddeint, ddeint_adjoint
+from example.demo_utils import DemoUtils, SimpleDemoData
+from paddlexde.functional import ddeint
 from paddlexde.solver.fixed_solver import RK4
 
 demo_utils = DemoUtils()
-if demo_utils.args.adjoint:
-    xdeint = ddeint_adjoint
-else:
-    xdeint = ddeint
+# if demo_utils.args.adjoint:
+#     xdeint = ddeint_adjoint
+# else:
+#     xdeint = ddeint
+xdeint = ddeint
 
 
 class DDEDataset(SimpleDemoData):

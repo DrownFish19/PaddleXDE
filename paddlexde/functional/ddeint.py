@@ -4,18 +4,18 @@ import paddle
 
 from ..utils.ode_utils import _rms_norm
 from ..xde import BaseDDE
+from .ddeint_utils import DelayIndex
 
 
 def ddeint(
-    func: callable,
+    drift_f: callable,
+    delay_f: callable,
     y0: Union[tuple, paddle.Tensor],
-    t_span,
-    lags,
-    his,
-    his_span,
+    y_t_span,
+    delay_t_span,
+    delay,
+    delay_t,
     solver,
-    rtol=1e-7,
-    atol=1e-9,
     options: object = {"norm": _rms_norm},
     fixed_solver_interp="linear",
     **kwargs,
@@ -28,20 +28,16 @@ def ddeint(
         ```
     where y is a Tensor or tuple of Tensors of any shape.
     """
-
+    delay = DelayIndex.apply(delay_t_span, delay, delay_t)
     xde = BaseDDE(
-        func,
+        drift_f=drift_f,
+        delay_f=delay_f,
         y0=y0,
-        t_span=t_span,
-        lags=lags,
-        his=his,
-        his_span=his_span,
+        delay=delay,
+        y_t_span=y_t_span,
         **kwargs,
     )
-
-    s = solver(
-        xde=xde, y0=xde.y0, rtol=rtol, atol=atol, interp=fixed_solver_interp, **options
-    )
-    solution = s.integrate(t_span)
+    s = solver(xde, xde.input_y0, interp=fixed_solver_interp, **options)
+    solution = s.integrate(y_t_span)
 
     return solution

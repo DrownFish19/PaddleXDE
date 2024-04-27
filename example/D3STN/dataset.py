@@ -1,6 +1,6 @@
 import numpy as np
 import paddle
-from paddle.io import DataLoader, Dataset
+from paddle.io import Dataset
 
 
 class ScalerStd(object):
@@ -160,16 +160,16 @@ class TrafficFlowDataset(Dataset):
             train_data = origin_data[:, : self.train_size, :]
             self.scaler.fit(train_data.reshape(-1, train_data.shape[-1]))
             self.data = self.scaler.transform(origin_data).reshape(
-               self.num_nodes, self.seq_len,  self.dims
+                self.num_nodes, self.seq_len, self.dims
             )
         else:
             self.data = origin_data
 
         # Concat day of week and hour of day index
         index = np.arange(0, self.seq_len, step=1).reshape([1, -1])
-        index = index.repeat(self.num_nodes, axis=0) # [N, T]
+        index = index.repeat(self.num_nodes, axis=0)  # [N, T]
         self.day_of_week_index = (index // 288) % 7
-        self.minute_of_day_index = index % 288
+        self.hour_of_day_index = (index // 12) % 24
 
         if self.data_type == "train":
             data_len = (
@@ -210,18 +210,19 @@ class TrafficFlowDataset(Dataset):
 
         his = self.data[:, his_begin:his_end, :]
         his_day_of_week_index = self.day_of_week_index[:, his_begin:his_end]
-        his_minute_of_day_index = self.minute_of_day_index[:, his_begin:his_end]
+        his_hour_of_day_index = self.hour_of_day_index[:, his_begin:his_end]
+
         tgt = self.data[:, tgt_begin:tgt_end, :]
         tgt_day_of_week_index = self.day_of_week_index[:, tgt_begin:tgt_end]
-        tgt_minute_of_day_index = self.minute_of_day_index[:, tgt_begin:tgt_end]
+        tgt_hour_of_day_index = self.hour_of_day_index[:, tgt_begin:tgt_end]
 
         return (
             his,
             his_day_of_week_index,
-            his_minute_of_day_index,
+            his_hour_of_day_index,
             tgt,
             tgt_day_of_week_index,
-            tgt_minute_of_day_index,
+            tgt_hour_of_day_index,
         )
 
     def __len__(self):

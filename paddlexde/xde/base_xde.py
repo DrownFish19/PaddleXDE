@@ -14,17 +14,11 @@ class BaseXDE(ABC, nn.Layer):
         self,
         name,
         var_nums,
-        y0: Union[tuple, paddle.Tensor],
         t_span: Union[list, paddle.Tensor],
     ):
         super(BaseXDE, self).__init__()
         self.name = name
         self.var_nums = var_nums  # 返回值数量
-
-        self.t_span = t_span
-        self.pred_len = t_span.shape
-
-        # self.init_y0(y0)  # shapes, numels, y0
 
     def method(self):
         print(f"current method is {self.name}.")

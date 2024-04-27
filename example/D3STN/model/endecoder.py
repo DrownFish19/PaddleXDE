@@ -1,5 +1,5 @@
 import paddle.nn as nn
-from example.D3STN.utils.utils import clones
+from utils.utils import clones
 
 
 class SublayerConnection(nn.Layer):
@@ -111,23 +111,27 @@ class DecoderLayer(nn.Layer):
                 SublayerConnection(size, dropout, residual_connection, use_layer_norm),
                 3,
             )
+        self.norm = nn.LayerNorm(size)
+        self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x, memory):
+    def forward(self, x, memory, past_key_values):
         """
         :param x: (batch_size, N, T', F_in)
         :param memory: (batch_size, N, T, F_in)
         :return: (batch_size, N, T', F_in)
         """
         m = memory
-        if self.residual_connection or self.use_layer_norm:
-            # [B,N,T,D]
-            x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, is_mask=True))
-            x = self.sublayer[1](x, lambda x: self.src_attn(x, m, m))  # [B,N,T,D]
-            return self.sublayer[2](x, self.feed_forward_gcn)  # [B,N,T,D]
-        else:
-            x = self.self_attn(x, x, x, is_mask=True)  # [B,N,T,D]
-            x = self.src_attn(x, m, m)  # [B,N,T,D]
-            return self.feed_forward_gcn(x)
+
+        # [B,N,T,D]
+        residual = x
+        x = self.norm(x)
+        x, past_key_values = self.self_attn(x, x, x, past_key_values, is_mask=True)
+        x = residual + self.dropout(x)
+
+        # [B,N,T,D]
+        x = self.sublayer[1](x, lambda x: self.src_attn(x, m, m))
+        x = self.sublayer[2](x, self.feed_forward_gcn)
+        return x, past_key_values
 
 
 class Decoder(nn.Layer):
@@ -136,12 +140,14 @@ class Decoder(nn.Layer):
         self.layers = clones(layer, n)
         self.norm = nn.LayerNorm(layer.size)
 
-    def forward(self, x, memory):
+    def forward(self, x, memory, past_key_values):
         """
         :param x: (batch, N, T', d_model)
         :param memory: (batch, N, T, d_model)
         :return:(batch, N, T', d_model)
         """
-        for layer in self.layers:
-            x = layer(x, memory)
-        return self.norm(x)
+        for idx, layer in enumerate(self.layers):
+            output = layer(x, memory, past_key_values[idx])
+            x = output[0]
+            past_key_values[idx] = output[1]
+        return self.norm(x), past_key_values

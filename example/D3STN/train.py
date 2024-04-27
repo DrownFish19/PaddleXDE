@@ -9,8 +9,6 @@ import paddle.nn as nn
 import paddle.optimizer as optim
 import sklearn.metrics as metrics
 import visualdl
-import paddlexde.solver as solver
-
 from args import args
 from dataset import TrafficFlowDataset
 from model.d3stn import D3STN
@@ -31,16 +29,16 @@ class Trainer:
         # 创建文件保存位置
         self.folder_dir = (
             f"MAE_{training_args.model_name}_eLayer{training_args.encoder_num_layers}_"
-            + f"dLayer{training_args.decoder_num_layers}_Head{training_args.head}_dm{training_args.d_model}_"
-            + f"inputSize{training_args.input_size}_"
-            + f"doutput{training_args.decoder_output_size}_drop{training_args.dropout}_"
+            + f"dLayer{training_args.decoder_num_layers}_head{training_args.head}_dm{training_args.d_model}_"
+            + f"input{training_args.input_size}_"
+            + f"doutput{training_args.output_size}_drop{training_args.dropout}_"
             + f"lr{training_args.learning_rate}_wd{training_args.weight_decay}_bs{training_args.batch_size}_"
             + f"topk{training_args.top_k}_att{training_args.attention}_trepoch{training_args.train_epochs}_"
             + f"finepoch{training_args.finetune_epochs}_dde"
         )
 
         self.save_path = os.path.join(
-            "experiments", training_args.dataset_name, self.folder_dir
+            "example/D3STN/experiments", training_args.dataset_name, self.folder_dir
         )
         os.makedirs(self.save_path, exist_ok=True)
         self.logger = Logger("D3STN", os.path.join(self.save_path, "log.txt"))
@@ -85,27 +83,30 @@ class Trainer:
         self.val_dataset = TrafficFlowDataset(self.training_args, "val")
         self.test_dataset = TrafficFlowDataset(self.training_args, "test")
 
-        self.train_dataloader = io.DataLoader(
+        train_sampler = io.DistributedBatchSampler(
             self.train_dataset,
             batch_size=self.training_args.batch_size,
             shuffle=True,
             drop_last=True,
         )
+        eval_sampler = io.DistributedBatchSampler(
+            self.val_dataset, batch_size=self.training_args.batch_size, drop_last=True
+        )
+        test_sampler = io.DistributedBatchSampler(
+            self.test_dataset, batch_size=self.training_args.batch_size, drop_last=True
+        )
+        self.train_dataloader = io.DataLoader(
+            self.train_dataset, batch_sampler=train_sampler
+        )
         self.eval_dataloader = io.DataLoader(
-            self.val_dataset,
-            batch_size=self.training_args.batch_size,
-            shuffle=False,
-            drop_last=False,
+            self.val_dataset, batch_sampler=eval_sampler
         )
         self.test_dataloader = io.DataLoader(
-            self.test_dataset,
-            batch_size=self.training_args.batch_size,
-            shuffle=False,
-            drop_last=False,
+            self.test_dataset, batch_sampler=test_sampler
         )
 
         # 构建encode和decode输入
-        encoder_idx,decoder_idx = [], []
+        encoder_idx, decoder_idx = [], []
 
         # encode 输入序列长度为12
         self.fix_week = paddle.arange(
@@ -129,33 +130,31 @@ class Trainer:
             self.training_args.his_len - 1
         )
 
+        # for week
         if self.training_args.his_len >= 2016:
-            # for week
             encoder_idx.append(self.fix_week)
+
+        # for day
         elif self.training_args.his_len >= 288:
-            # for day
             encoder_idx.append(self.fix_day)
+
+        # for hour
         elif self.training_args.his_len >= 12:
-            # for hour
             encoder_idx.append(self.fix_hour)
 
         decoder_idx.append(self.fix_pred)
+
         # concat all
-        encoder_idx = paddle.concat(encoder_idx)
-        decoder_idx = paddle.concat(decoder_idx)
+        self.encoder_idx = paddle.concat(encoder_idx)
+        self.decoder_idx = paddle.concat(decoder_idx)
 
         # 将encoder_idx和decoder_idx作为可训练参数
         self.encoder_idx = paddle.create_parameter(
-            shape=encoder_idx.shape, dtype="float32"
+            shape=self.encoder_idx.shape,
+            dtype="float32",
         )
-        self.decoder_idx = paddle.create_parameter(
-            shape=decoder_idx.shape, dtype="float32"
-        )
-        self.encoder_idx.set_value(paddle.cast(encoder_idx, "float32"))
-        self.decoder_idx.set_value(paddle.cast(decoder_idx, "float32"))
-
+        self.encoder_idx.set_value(paddle.cast(self.encoder_idx, "float32"))
         self.logger.info(f"encoder_idx: {self.encoder_idx}")
-        self.logger.info(f"decoder_idx: {self.decoder_idx}")
 
     def _build_model(self):
         default_dtype = paddle.get_default_dtype()
@@ -173,25 +172,29 @@ class Trainer:
             nn.initializer.XavierUniform(), nn.initializer.Constant(value=0.0)
         )
 
-        self.net = D3STN(
+        self.model = D3STN(
             self.training_args,
             adj_matrix=adj_matrix,
             sc_matrix=sc_matrix,
         )
 
+        if self.training_args.distribute:
+            self.model = paddle.DataParallel(self.model)
+
         if self.training_args.continue_training:
             self.load()
 
         # 输出模型信息
-        self.logger.debug(self.net)
+        self.logger.debug("========== model info ==========")
+        self.logger.debug(self.model)
 
         total_param = 0
-        self.logger.debug("Net's state_dict:")
-        for param_tensor in self.net.state_dict():
+        self.logger.debug("========== state dict info ==========")
+        for param_tensor in self.model.state_dict():
             self.logger.debug(
-                f"{param_tensor} \t {self.net.state_dict()[param_tensor].shape}"
+                f"{param_tensor} \t {self.model.state_dict()[param_tensor].shape}"
             )
-            total_param += np.prod(self.net.state_dict()[param_tensor].shape)
+            total_param += np.prod(self.model.state_dict()[param_tensor].shape)
         self.logger.debug(f"Net's total params: {total_param}.")
 
     def _build_optim(self):
@@ -207,12 +210,12 @@ class Trainer:
         # 为不同的参数设置不同的训练参数
         parameters = [
             {
-                "params": self.net.parameters(),
+                "params": self.encoder.parameters(),
                 "learning_rate": self.training_args.learning_rate,
             },
             {
-                "params": [self.decoder_idx],
-                "learning_rate": self.training_args.learning_rate * 0.1,
+                "params": self.decoder.parameters(),
+                "learning_rate": self.training_args.learning_rate,
             },
             {
                 "params": [self.encoder_idx],
@@ -225,7 +228,6 @@ class Trainer:
             parameters=parameters,
             learning_rate=self.lr_scheduler,
             weight_decay=self.training_args.weight_decay,
-            multi_precision=True,
         )
 
         # 输出模型优化器信息
@@ -233,47 +235,37 @@ class Trainer:
         for var_name in self.optimizer.state_dict():
             self.logger.info(f"{var_name} \t {self.optimizer.state_dict()[var_name]}")
 
-        # 输出当前微分方程使用的优化器函数
-        if self.training_args.solver == "euler":
-            self.dde_solver = solver.Euler
-        elif self.training_args.solver == "midpoint":
-            self.dde_solver = solver.Midpoint
-        elif self.training_args.solver == "rk4":
-            self.dde_solver = solver.RK4
-
-        self.logger.info(f"dde_solver: {self.dde_solver}")
-
     def save(self, epoch=None):
         if epoch is not None:
             params_filename = os.path.join(self.save_path, f"epoch_{epoch}.params")
+            params_opt_filename = os.path.join(self.save_path, f"epoch_{epoch}.pdopt")
             encoder_idx_filename = os.path.join(self.save_path, f"epoch_{epoch}.enidx")
-            decoder_idx_filename = os.path.join(self.save_path, f"epoch_{epoch}.deidx")
-            paddle.save(self.net.state_dict(), params_filename)
+            paddle.save(self.model.state_dict(), params_filename)
+            paddle.save(self.optimizer.state_dict(), params_opt_filename)
             paddle.save(self.encoder_idx, encoder_idx_filename)
-            paddle.save(self.decoder_idx, decoder_idx_filename)
             self.logger.info(f"save parameters to file: {params_filename}")
 
         params_filename = os.path.join(self.save_path, "epoch_best.params")
+        params_opt_filename = os.path.join(self.save_path, "epoch_best.pdopt")
         encoder_idx_filename = os.path.join(self.save_path, "epoch_best.enidx")
-        decoder_idx_filename = os.path.join(self.save_path, "epoch_best.deidx")
-        paddle.save(self.net.state_dict(), params_filename)
+        paddle.save(self.model.state_dict(), params_filename)
+        paddle.save(self.optimizer.state_dict(), params_opt_filename)
         paddle.save(self.encoder_idx, encoder_idx_filename)
-        paddle.save(self.decoder_idx, decoder_idx_filename)
-        self.logger.info(f"save parameters to file: {params_filename}")
+        self.logger.info(f"save best parameters to file: {params_filename}")
 
     def load(self, epoch=None):
         if epoch is not None:
             params_filename = os.path.join(self.save_path, f"epoch_{epoch}.params")
+            params_opt_filename = os.path.join(self.save_path, f"epoch_{epoch}.pdopt")
             encoder_idx_filename = os.path.join(self.save_path, f"epoch_{epoch}.enidx")
-            decoder_idx_filename = os.path.join(self.save_path, f"epoch_{epoch}.deidx")
         else:
             params_filename = os.path.join(self.save_path, "epoch_best.params")
+            params_opt_filename = os.path.join(self.save_path, "epoch_best.pdopt")
             encoder_idx_filename = os.path.join(self.save_path, "epoch_best.enidx")
-            decoder_idx_filename = os.path.join(self.save_path, "epoch_best.deidx")
 
-        self.net.set_state_dict(paddle.load(params_filename))
+        self.model.set_state_dict(paddle.load(params_filename))
+        self.optimizer.set_state_dict(paddle.load(params_opt_filename))
         self.encoder_idx.set_value(paddle.load(encoder_idx_filename))
-        self.decoder_idx.set_value(paddle.load(decoder_idx_filename))
         self.logger.info(f"load weight from: {params_filename}")
 
     def train(self):
@@ -293,7 +285,7 @@ class Trainer:
                 self.writer.add_scalar("train/lr", self.optimizer.get_lr(), global_step)
                 epoch_step += 1
                 global_step += 1
-                # self.logger.info(f"train: {global_step} loss: {training_loss.item()}")
+
             self.logger.info(f"learning_rate: {self.optimizer.get_lr()}")
             self.logger.info(
                 f"epoch: {epoch}, train time cost:{time.time() - tr_s_time}"
@@ -326,12 +318,12 @@ class Trainer:
 
         parameters = [
             {
-                "params": self.net.parameters(),
+                "params": self.encoder.parameters(),
                 "learning_rate": self.training_args.learning_rate * 0.1,
             },
             {
-                "params": [self.decoder_idx],
-                "learning_rate": self.training_args.learning_rate,
+                "params": self.decoder.parameters(),
+                "learning_rate": self.training_args.learning_rate * 0.1,
             },
             {
                 "params": [self.encoder_idx],
@@ -383,17 +375,20 @@ class Trainer:
         self.logger.info("apply the best val model on the test dataset ...")
 
     def train_one_step(self, batch_data):
-        self.net.train()
-        src, src_d_idx, src_m_idx, tgt, tgt_d_idx, tgt_m_idx = batch_data
-        encoder_input = src
-        decoder_input = paddle.zeros_like(tgt)
-        kwargs = {
-            "src_d_idx": src_d_idx,
-            "src_m_idx": src_m_idx,
-            "tgt_d_idx": tgt_d_idx,
-            "tgt_m_idx": tgt_m_idx,
-        }
-        preds = self.net(encoder_input, self.encoder_idx, decoder_input, **kwargs)
+        self.model.train()
+
+        src, src_day_idx, src_hour_idx, tgt, tgt_day_idx, tgt_hour_idx = batch_data
+
+        preds = self.model(
+            src,
+            self.encoder_idx,
+            src_day_idx,
+            src_hour_idx,
+            tgt,
+            self.decoder_idx,
+            tgt_day_idx,
+            tgt_hour_idx,
+        )
         loss = self.criterion(preds, tgt)
 
         loss.backward()
@@ -403,7 +398,7 @@ class Trainer:
         return preds, loss
 
     def eval_one_step(self, batch_data):
-        self.net.eval()
+        self.model.eval()
         src, src_d_idx, src_m_idx, tgt, tgt_d_idx, tgt_m_idx = batch_data
         encoder_input = src
         decoder_input = paddle.zeros_like(tgt)
@@ -413,13 +408,13 @@ class Trainer:
             "tgt_d_idx": tgt_d_idx,
             "tgt_m_idx": tgt_m_idx,
         }
-        preds = self.net(encoder_input, self.encoder_idx, decoder_input, **kwargs)
+        preds = self.model(encoder_input, self.encoder_idx, decoder_input, **kwargs)
         loss = self.criterion(preds, tgt)
 
         return preds, loss
 
     def test_one_step(self, batch_data):
-        self.net.eval()
+        self.model.eval()
         src, src_d_idx, src_m_idx, tgt, tgt_d_idx, tgt_m_idx = batch_data
         encoder_input = src
         decoder_input = paddle.zeros_like(tgt)
@@ -429,7 +424,7 @@ class Trainer:
             "tgt_d_idx": tgt_d_idx,
             "tgt_m_idx": tgt_m_idx,
         }
-        preds = self.net(encoder_input, self.encoder_idx, decoder_input, **kwargs)
+        preds = self.model(encoder_input, self.encoder_idx, decoder_input, **kwargs)
         loss = self.criterion(preds, tgt)
 
         return preds, loss

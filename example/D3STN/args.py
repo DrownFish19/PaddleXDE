@@ -1,4 +1,5 @@
 import argparse
+import json
 
 parser = argparse.ArgumentParser(description="Traffic Flow Forecasting")
 
@@ -54,9 +55,23 @@ parser.add_argument("--batch_size", type=int, default=16, help="batch_size")
 parser.add_argument("--loss", type=str, default="mse", help="loss function")
 parser.add_argument("--dropout", type=float, default=0.0, help="dropout")
 parser.add_argument("--continue_training", type=bool, default=False, help="")
-parser.add_argument("--distribute", type=bool, default=True, help="")
-
-# args = parser.parse_args("")
-args = parser.parse_args()
+parser.add_argument("--distribute", type=bool, default=False, help="")
 
 
+def get_args_from_json(json_file_path, args_obj):
+    with open(json_file_path) as f:
+        json_dict = json.load(fp=f)
+
+    for key in json_dict.keys():
+        setattr(args_obj, key, json_dict[key])
+
+    return args_obj
+
+
+args_obj = parser.parse_args()
+# args = get_args_from_json("example/D3STN/configs/PEMS03.json", args_obj)
+# args = get_args_from_json("example/D3STN/configs/PEMS04.json", args_obj)
+# args = get_args_from_json("example/D3STN/configs/PEMS07.json", args_obj)
+# args = get_args_from_json("example/D3STN/configs/PEMS08.json", args_obj)
+# args = get_args_from_json("example/D3STN/configs/HZME_INFLOW.json", args_obj)
+args = get_args_from_json("example/D3STN/configs/HZME_OUTFLOW.json", args_obj)

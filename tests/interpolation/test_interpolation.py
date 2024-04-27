@@ -28,22 +28,28 @@ class TestInterpolationForFixedDeriv(unittest.TestCase):
         # [B, T, D]
         self.val_tgt = paddle.to_tensor([21.12 * 0.5, 0]).unsqueeze(0).unsqueeze(0)
         # [B, T, D]
-        self.tgt_deri = paddle.to_tensor([0.5, 0]).unsqueeze(0).unsqueeze(0)
+        self.tgt_deriv = paddle.to_tensor([0.5, 0]).unsqueeze(0).unsqueeze(0)
 
     def test_LinearInterpolation(self):
         interp = LinearInterpolation(self.series, self.t)
         assert paddle.allclose(self.val_tgt, interp.evaluate(self.t_eval), rtol=1e-4)
-        assert paddle.allclose(self.tgt_deri, interp.derivative(self.t_eval), rtol=1e-4)
+        assert paddle.allclose(
+            self.tgt_deriv, interp.derivative(self.t_eval), rtol=1e-4
+        )
 
     def test_CubicHermiteSpline(self):
         interp = CubicHermiteSpline(self.series, self.t)
         assert paddle.allclose(self.val_tgt, interp.evaluate(self.t_eval), rtol=1e-4)
-        assert paddle.allclose(self.tgt_deri, interp.derivative(self.t_eval), rtol=1e-4)
+        assert paddle.allclose(
+            self.tgt_deriv, interp.derivative(self.t_eval), rtol=1e-4
+        )
 
     def test_BezierSpline(self):
         interp = BezierSpline(self.series, self.t)
         assert paddle.allclose(self.val_tgt, interp.evaluate(self.t_eval), rtol=1e-4)
-        assert paddle.allclose(self.tgt_deri, interp.derivative(self.t_eval), rtol=1e-4)
+        assert paddle.allclose(
+            self.tgt_deriv, interp.derivative(self.t_eval), rtol=1e-4
+        )
 
 
 class TestInterpolationForDynamicDeriv(unittest.TestCase):
