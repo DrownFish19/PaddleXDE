@@ -4,8 +4,8 @@ import numpy as np
 import paddle
 import torch
 from args import args
-from d3stn import D3STN
-from utils import get_adjacency_matrix_2direction, norm_adj_matrix
+from example.D3STN.model.d3stn import D3STN
+from example.D3STN.utils.utils import get_adjacency_matrix_2direction, norm_adj_matrix
 
 encoder_layer_num = 4
 decoder_layer_num = 4

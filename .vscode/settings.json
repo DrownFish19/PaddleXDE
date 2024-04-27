@@ -9,6 +9,9 @@
     "python.testing.pytestEnabled": false,
     "python.testing.unittestEnabled": true,
     "cSpell.words": [
+        "allclose",
+        "arange",
+        "Bezier",
         "boltons",
         "cacheutils",
         "ddeint",
@@ -23,11 +26,16 @@
         "endecoder",
         "enidx",
         "finepoch",
+        "finetune",
         "graphconv",
         "HZME",
+        "interp",
         "logdir",
         "optim",
+        "paddlexde",
+        "PEMS",
         "preds",
+        "rtol",
         "SCORR",
         "tgts",
         "topk",
@@ -35,5 +43,6 @@
         "unsqueeze",
         "visualdl",
         "xdeint"
-    ]
+    ],
+    "python.formatting.provider": "black"
 }

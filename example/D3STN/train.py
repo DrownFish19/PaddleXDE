@@ -9,18 +9,18 @@ import paddle.nn as nn
 import paddle.optimizer as optim
 import sklearn.metrics as metrics
 import visualdl
+import paddlexde.solver as solver
+
 from args import args
-from d3stn import D3STN
 from dataset import TrafficFlowDataset
-from utils import (
+from model.d3stn import D3STN
+from utils.utils import (
     CosineAnnealingWithWarmupDecay,
     Logger,
     get_adjacency_matrix_2direction,
     masked_mape_np,
     norm_adj_matrix,
 )
-
-from paddlexde.solver.fixed_solver import RK4, Euler, Midpoint
 
 
 class Trainer:
@@ -30,9 +30,9 @@ class Trainer:
 
         # 创建文件保存位置
         self.folder_dir = (
-            f"MAE_{training_args.model_name}_elayer{training_args.encoder_num_layers}_"
-            + f"dlayer{training_args.decoder_num_layers}_head{training_args.head}_dm{training_args.d_model}_"
-            + f"einput{training_args.encoder_input_size}_dinput{training_args.decoder_input_size}_"
+            f"MAE_{training_args.model_name}_eLayer{training_args.encoder_num_layers}_"
+            + f"dLayer{training_args.decoder_num_layers}_Head{training_args.head}_dm{training_args.d_model}_"
+            + f"inputSize{training_args.input_size}_"
             + f"doutput{training_args.decoder_output_size}_drop{training_args.dropout}_"
             + f"lr{training_args.learning_rate}_wd{training_args.weight_decay}_bs{training_args.batch_size}_"
             + f"topk{training_args.top_k}_att{training_args.attention}_trepoch{training_args.train_epochs}_"
@@ -104,7 +104,10 @@ class Trainer:
             drop_last=False,
         )
 
-        # 初始化输入序列长度为12
+        # 构建encode和decode输入
+        encoder_idx,decoder_idx = [], []
+
+        # encode 输入序列长度为12
         self.fix_week = paddle.arange(
             start=self.training_args.his_len - 2016,
             end=self.training_args.his_len - 2016 + 12,
@@ -121,12 +124,10 @@ class Trainer:
             start=self.training_args.his_len,
             end=self.training_args.his_len + 12,
         )
+        # decode 输入序列长度为12, 为encode输入的最后一个位置
         self.fix_pred = paddle.ones(shape=[self.training_args.tgt_len]) * (
             self.training_args.his_len - 1
         )
-
-        encoder_idx = []
-        decoder_idx = [self.fix_pred]
 
         if self.training_args.his_len >= 2016:
             # for week
@@ -138,6 +139,7 @@ class Trainer:
             # for hour
             encoder_idx.append(self.fix_hour)
 
+        decoder_idx.append(self.fix_pred)
         # concat all
         encoder_idx = paddle.concat(encoder_idx)
         decoder_idx = paddle.concat(decoder_idx)
@@ -233,11 +235,11 @@ class Trainer:
 
         # 输出当前微分方程使用的优化器函数
         if self.training_args.solver == "euler":
-            self.dde_solver = Euler
+            self.dde_solver = solver.Euler
         elif self.training_args.solver == "midpoint":
-            self.dde_solver = Midpoint
+            self.dde_solver = solver.Midpoint
         elif self.training_args.solver == "rk4":
-            self.dde_solver = RK4
+            self.dde_solver = solver.RK4
 
         self.logger.info(f"dde_solver: {self.dde_solver}")
 

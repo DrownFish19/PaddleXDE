@@ -3,7 +3,7 @@ from copy import deepcopy
 import paddle
 import paddle.autograd as autograd
 import paddle.nn as nn
-from attention import MultiHeadAttentionAwareTemporalContext
+from example.D3STN.model.attention import MultiHeadAttentionAwareTemporalContext
 from embedding import TrafficFlowEmbedding
 from endecoder import Decoder, DecoderLayer, Encoder, EncoderLayer
 from graphconv import SpatialAttentionGCN
@@ -131,10 +131,10 @@ class D3STN(nn.Layer):
         output = ddeint(
             func=self.endecode,
             y0=tgt,
-            t_span=pred_span,
-            lags=src_idx,
-            his=src,
-            his_span=his_span,
+            pred_index=pred_span,
+            history_index=src_idx,
+            history=src,
+            history_timestamp=his_span,
             solver=self.dde_solver,
             fixed_solver_interp="",
             **kwargs,
