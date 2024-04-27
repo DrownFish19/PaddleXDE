@@ -125,7 +125,9 @@ class DecoderLayer(nn.Layer):
         # [B,N,T,D]
         residual = x
         x = self.norm(x)
-        x, past_key_values = self.self_attn(x, x, x, past_key_values, is_mask=True)
+        x, past_key_values = self.self_attn(
+            x, x, x, past_key_values, is_mask=True, use_cache=True
+        )
         x = residual + self.dropout(x)
 
         # [B,N,T,D]

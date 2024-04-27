@@ -40,11 +40,6 @@ class FixedSolver(metaclass=abc.ABCMeta):
         self.dtype = y0.dtype
         self.step_size = step_size
         self.interp = interp
-        self.perturb = perturb
-
-        self.atol = kwargs["atol"]
-        self.rtol = kwargs["rtol"]
-        self.norm = kwargs["norm"]
 
         if step_size is None:
             if grid_constructor is None:
@@ -61,7 +56,6 @@ class FixedSolver(metaclass=abc.ABCMeta):
 
         self.move = self.xde.move
         self.fuse = self.xde.fuse
-        self.on_integrate_step_end = self.xde.on_integrate_step_end
 
     @staticmethod
     def _grid_constructor_from_step_size(step_size):

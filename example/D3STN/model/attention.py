@@ -178,6 +178,7 @@ class MultiHeadAttentionAwareTemporalContext(nn.Layer):
         value,
         past_key_values=None,
         is_mask=False,
+        use_cache=False,
     ):
         """
         Args:
@@ -213,13 +214,14 @@ class MultiHeadAttentionAwareTemporalContext(nn.Layer):
         if self.attention_type == "Corr":
             axis_b = paddle.arange(B)[:, None, None, None, None]
             axis_n = self.indx[None, :, :, None, None]
-            axis_t = paddle.arange(T2)[None, None, None, :, None]
+            axis_t1 = paddle.arange(T)[None, None, None, :, None]
+            axis_t2 = paddle.arange(T2)[None, None, None, :, None]
             axis_d = paddle.arange(D)[None, None, None, None, :]
 
             # [B,N,K,H,T,D] => [B,H,T,N,K,D]
             perm = [0, 3, 1, 2, 4]
-            query_selected = query[axis_b, axis_n, axis_t, axis_d].transpose(perm)
-            key_selected = key[axis_b, axis_n, axis_t, axis_d].transpose(perm)
+            query_selected = query[axis_b, axis_n, axis_t1, axis_d].transpose(perm)
+            key_selected = key[axis_b, axis_n, axis_t2, axis_d].transpose(perm)
 
             query = paddle.matmul(self.vals, query_selected).squeeze(-2)
             key = paddle.matmul(self.vals, key_selected).squeeze(-2)
@@ -239,12 +241,14 @@ class MultiHeadAttentionAwareTemporalContext(nn.Layer):
             key = paddle.concat([past_key_values[0], key], axis=3)
             value = paddle.concat([past_key_values[1], value], axis=3)
             past_key_values = (key, value)
+        else:
+            past_key_values = (key, value)
         x = self.attention(query, key, value, mask=mask, dropout=self.dropout)
 
         # [B,N,T,D]
         x = x.transpose(perm).reshape([B, N, -1, self.heads * self.head_dim])
 
-        if past_key_values is not None:
+        if use_cache:
             return self.out_conv(x), past_key_values
         else:
             return self.out_conv(x)

@@ -1,7 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Union
 
-import paddle
 import paddle.nn as nn
 
 
@@ -14,7 +12,6 @@ class BaseXDE(ABC, nn.Layer):
         self,
         name,
         var_nums,
-        t_span: Union[list, paddle.Tensor],
     ):
         super(BaseXDE, self).__init__()
         self.name = name

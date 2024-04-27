@@ -4,6 +4,7 @@ import time
 
 import numpy as np
 import paddle
+import paddle.distributed as dist
 import paddle.io as io
 import paddle.nn as nn
 import paddle.optimizer as optim
@@ -23,9 +24,9 @@ from utils.utils import (
 
 class Trainer:
     def __init__(self, training_args):
+        dist.init_parallel_env()
 
         self.training_args = training_args
-
         # 创建文件保存位置
         self.folder_dir = (
             f"MAE_{training_args.model_name}_eLayer{training_args.encoder_num_layers}_"
@@ -221,7 +222,7 @@ class Trainer:
         self.optimizer = optim.Adam(
             parameters=parameters,
             learning_rate=self.lr_scheduler,
-            weight_decay=self.training_args.weight_decay,
+            weight_decay=0.001,
         )
 
         # 输出模型优化器信息
@@ -312,11 +313,7 @@ class Trainer:
 
         parameters = [
             {
-                "params": self.encoder.parameters(),
-                "learning_rate": self.training_args.learning_rate * 0.1,
-            },
-            {
-                "params": self.decoder.parameters(),
+                "params": self.model.parameters(),
                 "learning_rate": self.training_args.learning_rate * 0.1,
             },
             {
@@ -330,7 +327,6 @@ class Trainer:
             parameters=parameters,
             learning_rate=self.lr_scheduler,
             weight_decay=self.training_args.weight_decay,
-            multi_precision=True,
         )
 
         s_time = time.time()
@@ -393,32 +389,38 @@ class Trainer:
 
     def eval_one_step(self, batch_data):
         self.model.eval()
-        src, src_d_idx, src_m_idx, tgt, tgt_d_idx, tgt_m_idx = batch_data
-        encoder_input = src
-        decoder_input = paddle.zeros_like(tgt)
-        kwargs = {
-            "src_d_idx": src_d_idx,
-            "src_m_idx": src_m_idx,
-            "tgt_d_idx": tgt_d_idx,
-            "tgt_m_idx": tgt_m_idx,
-        }
-        preds = self.model(encoder_input, self.encoder_idx, decoder_input, **kwargs)
+
+        src, src_day_idx, src_hour_idx, tgt, tgt_day_idx, tgt_hour_idx = batch_data
+
+        preds = self.model(
+            src,
+            self.encoder_idx,
+            src_day_idx,
+            src_hour_idx,
+            tgt,
+            self.decoder_idx,
+            tgt_day_idx,
+            tgt_hour_idx,
+        )
         loss = self.criterion(preds, tgt)
 
         return preds, loss
 
     def test_one_step(self, batch_data):
         self.model.eval()
-        src, src_d_idx, src_m_idx, tgt, tgt_d_idx, tgt_m_idx = batch_data
-        encoder_input = src
-        decoder_input = paddle.zeros_like(tgt)
-        kwargs = {
-            "src_d_idx": src_d_idx,
-            "src_m_idx": src_m_idx,
-            "tgt_d_idx": tgt_d_idx,
-            "tgt_m_idx": tgt_m_idx,
-        }
-        preds = self.model(encoder_input, self.encoder_idx, decoder_input, **kwargs)
+
+        src, src_day_idx, src_hour_idx, tgt, tgt_day_idx, tgt_hour_idx = batch_data
+
+        preds = self.model(
+            src,
+            self.encoder_idx,
+            src_day_idx,
+            src_hour_idx,
+            tgt,
+            self.decoder_idx,
+            tgt_day_idx,
+            tgt_hour_idx,
+        )
         loss = self.criterion(preds, tgt)
 
         return preds, loss

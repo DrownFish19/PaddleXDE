@@ -110,8 +110,11 @@ class D3STN(nn.Layer):
         hour_idx = paddle.index_select(hour_idx, idx, axis=2)
         tgt_dense = self.decoder_embedding(y0, idx, day_idx, hour_idx)
 
-        decoder_output = self.decoder(x=tgt_dense, memory=encoder_output)
-        return self.generator(decoder_output)
+        decoder_output = self.decoder(
+            x=tgt_dense, memory=encoder_output, past_key_values=self.past_key_values
+        )
+        self.past_key_values = decoder_output[1]
+        return self.generator(decoder_output[0])
 
     def forward(
         self,
@@ -149,17 +152,21 @@ class D3STN(nn.Layer):
             "tgt_day_idx": tgt_day_idx,
             "tgt_hour_idx": tgt_hour_idx,
         }
-
+        self.past_key_values = [
+            None for _ in range(self.training_args.decoder_num_layers)
+        ]
         y0 = src[:, :, -1:, :]
-        delay_len = src.shape[2]
+        delay_t = paddle.arange(src.shape[2], dtype=paddle.int64)
+        tgt_idx = paddle.concat([delay_t[-1:], tgt_idx])
+
         output = ddeint(
-            drift_f=self.decoder,
-            delay_f=self.encoder,
+            drift_f=self.decode,
+            delay_f=self.encode,
             y0=y0,
             y_t_span=tgt_idx,
             delay_t_span=src_idx,
             delay=src,
-            delay_t=paddle.arange(delay_len, dtype=paddle.float32),
+            delay_t=delay_t,
             solver=self.dde_solver,
             fixed_solver_interp="",
             **kwargs,
