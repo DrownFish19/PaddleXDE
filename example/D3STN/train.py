@@ -125,10 +125,6 @@ class Trainer:
             start=self.training_args.his_len,
             end=self.training_args.his_len + 12,
         )
-        # decode 输入序列长度为12, 为encode输入的最后一个位置
-        self.fix_pred = paddle.ones(shape=[self.training_args.tgt_len]) * (
-            self.training_args.his_len - 1
-        )
 
         # for week
         if self.training_args.his_len >= 2016:
@@ -145,16 +141,18 @@ class Trainer:
         decoder_idx.append(self.fix_pred)
 
         # concat all
-        self.encoder_idx = paddle.concat(encoder_idx)
-        self.decoder_idx = paddle.concat(decoder_idx)
+        encoder_idx = paddle.concat(encoder_idx)
 
         # 将encoder_idx和decoder_idx作为可训练参数
         self.encoder_idx = paddle.create_parameter(
-            shape=self.encoder_idx.shape,
+            shape=encoder_idx.shape,
             dtype="float32",
         )
-        self.encoder_idx.set_value(paddle.cast(self.encoder_idx, "float32"))
-        self.logger.info(f"encoder_idx: {self.encoder_idx}")
+        self.encoder_idx.set_value(paddle.cast(encoder_idx, "float32"))
+        self.decoder_idx = paddle.concat(decoder_idx)
+
+        self.logger.info(f"encoder_idx: {self.encoder_idx.cpu().numpy()}")
+        self.logger.info(f"decoder_idx: {self.decoder_idx.cpu().numpy()}")
 
     def _build_model(self):
         default_dtype = paddle.get_default_dtype()
@@ -210,11 +208,7 @@ class Trainer:
         # 为不同的参数设置不同的训练参数
         parameters = [
             {
-                "params": self.encoder.parameters(),
-                "learning_rate": self.training_args.learning_rate,
-            },
-            {
-                "params": self.decoder.parameters(),
+                "params": self.model.parameters(),
                 "learning_rate": self.training_args.learning_rate,
             },
             {

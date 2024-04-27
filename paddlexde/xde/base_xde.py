@@ -80,22 +80,6 @@ class BaseXDE(ABC, nn.Layer):
     def flatten(self, input):
         raise NotImplementedError
 
-    # def format(self, sol):
-    #     """_summary_
-
-    #     Args:
-    #         sol (list): pred_len * [B, 1, D]
-
-    #     Returns:
-    #         _type_: _description_
-    #     """
-    #     # [pred_len, batch_size, D]
-    #     sol = paddle.concat(sol, axis=-2)
-    #     return sol
-
-    def on_integrate_step_end(self, y0=None, y1=None, t0=None, t1=None):
-        pass
-
     @abstractmethod
     def call_func(self, **kwargs):
         raise NotImplementedError

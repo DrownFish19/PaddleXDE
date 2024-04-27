@@ -44,6 +44,12 @@ class BaseDDE(BaseXDE):
 
         self.delays_hidden_state = self.delay_f(self.input_delay, **kwargs)
 
+    def init_y0(self, input):
+        pass
+
+    def handle(self, h, ts):
+        pass
+
     def move(self, t0, dt, y0):
         # self.init_lags()
         # input_history = paddle.index_select(self.history, self.lags)

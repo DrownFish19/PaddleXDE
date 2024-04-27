@@ -75,9 +75,7 @@ class D3STN(nn.Layer):
         self.encoder = Encoder(encoderLayer, training_args.encoder_num_layers)
         self.decoder = Decoder(decoderLayer, training_args.decoder_num_layers)
 
-        self.generator = nn.Linear(
-            training_args.d_model, training_args.decoder_output_size
-        )
+        self.generator = nn.Linear(training_args.d_model, training_args.output_size)
 
     def encode(self, src, **kwargs):
         """_summary_
