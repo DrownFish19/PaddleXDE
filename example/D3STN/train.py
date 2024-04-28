@@ -21,6 +21,8 @@ from utils.utils import (
     norm_adj_matrix,
 )
 
+np.set_printoptions(linewidth=1000)
+
 
 class Trainer:
     def __init__(self, training_args):
