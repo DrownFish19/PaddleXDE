@@ -222,7 +222,7 @@ class Trainer:
         self.optimizer = optim.Adam(
             parameters=parameters,
             learning_rate=self.lr_scheduler,
-            weight_decay=0.001,
+            weight_decay=float(self.training_args.weight_decay),
         )
 
         # 输出模型优化器信息
@@ -231,6 +231,9 @@ class Trainer:
             self.logger.info(f"{var_name} \t {self.optimizer.state_dict()[var_name]}")
 
     def save(self, epoch=None):
+        if dist.get_world_size() > 1 and dist.get_rank() != 0:
+            return
+
         if epoch is not None:
             params_filename = os.path.join(self.save_path, f"epoch_{epoch}.params")
             params_opt_filename = os.path.join(self.save_path, f"epoch_{epoch}.pdopt")
@@ -286,7 +289,8 @@ class Trainer:
                 f"epoch: {epoch}, train time cost:{time.time() - tr_s_time}"
             )
             self.logger.info(f"epoch: {epoch}, total time cost:{time.time() - s_time}")
-
+            self.logger.info(f"encoder_idx: {self.encoder_idx.cpu().numpy()}")
+            self.logger.info(f"decoder_idx: {self.decoder_idx.cpu().numpy()}")
             # apply model on the validation data set
             eval_loss = self.compute_eval_loss(epoch)
             if eval_loss < best_eval_loss:
@@ -299,6 +303,7 @@ class Trainer:
 
         self.logger.info(f"best epoch: {best_epoch}")
         self.logger.info("apply the best val model on the test dataset ...")
+        self.compute_test_loss(epoch)
 
     def finetune(self):
         self.logger.info("Start FineTune Training")
@@ -326,7 +331,7 @@ class Trainer:
         self.optimizer = optim.Adam(
             parameters=parameters,
             learning_rate=self.lr_scheduler,
-            weight_decay=self.training_args.weight_decay,
+            weight_decay=float(self.training_args.weight_decay),
         )
 
         s_time = time.time()
@@ -344,12 +349,14 @@ class Trainer:
                 self.writer.add_scalar("train/lr", self.optimizer.get_lr(), global_step)
                 epoch_step += 1
                 global_step += 1
-                # self.logger.info(f"train: {global_step} loss: {training_loss.item()}")
+
             self.logger.info(f"learning_rate: {self.optimizer.get_lr()}")
             self.logger.info(
                 f"epoch: {epoch}, train time cost:{time.time() - tr_s_time}"
             )
             self.logger.info(f"epoch: {epoch}, total time cost:{time.time() - s_time}")
+            self.logger.info(f"encoder_idx: {self.encoder_idx.cpu().numpy()}")
+            self.logger.info(f"decoder_idx: {self.decoder_idx.cpu().numpy()}")
 
             # apply model on the validation data set
             eval_loss = self.compute_eval_loss(epoch)
@@ -363,6 +370,7 @@ class Trainer:
 
         self.logger.info(f"best epoch: {best_epoch}")
         self.logger.info("apply the best val model on the test dataset ...")
+        self.compute_test_loss(epoch)
 
     def train_one_step(self, batch_data):
         self.model.train()
@@ -434,9 +442,18 @@ class Trainer:
                 self.writer.add_scalar(f"eval/loss-{epoch}", eval_loss, batch_index)
                 all_eval_loss += eval_loss
 
-            eval_loss = all_eval_loss / len(self.eval_dataloader)
-            self.logger.info(f"eval cost time: {time.time() - start_time} s")
-            self.logger.info(f"eval_loss: {float(eval_loss)}")
+            eval_loss = (all_eval_loss / len(self.eval_dataloader)).cpu().numpy()
+
+            all_eval_loss = []
+            if dist.get_world_size() > 1:
+                dist.all_gather_object(all_eval_loss, eval_loss)
+                eval_loss = np.mean(
+                    [all_eval_loss[i] for i in range(dist.get_world_size())]
+                )
+                self.logger.info(f"eval cost time: {time.time() - start_time}s")
+                self.logger.info(f"eval_loss: {eval_loss}")
+                paddle.device.cuda.empty_cache()
+
         return eval_loss
 
     def compute_test_loss(self, epoch=-1):
@@ -445,21 +462,39 @@ class Trainer:
             start_time = time.time()
             all_test_loss = paddle.zeros([1], dtype=paddle.get_default_dtype())
             for batch_index, batch_data in enumerate(self.test_dataloader):
+                tgt = batch_data[3]
                 predict_output, test_loss = self.test_one_step(batch_data)
                 self.writer.add_scalar(f"test/loss-{epoch}", test_loss, batch_index)
                 all_test_loss += test_loss
-                preds.append(predict_output)
-                tgts.append(batch_data[3])
+                preds.append(predict_output.detach().numpy())
+                tgts.append(tgt.detach().numpy())
             test_loss = all_test_loss / len(self.test_dataloader)
             self.logger.info(f"test time on whole data: {time.time() - start_time} s")
             self.logger.info(f"test_loss: {float(test_loss)}")
 
-            preds = paddle.concat(preds, axis=0)  # [B,N,T,1]
-            trues = paddle.concat(tgts, axis=0)  # [B,N,T,F]
+            preds = np.concatenate(preds, axis=0)  # [B,N,T,1]
+            trues = np.concatenate(tgts, axis=0)  # [B,N,T,F]
             # [B,N,T,1]
-            preds = self.test_dataset.inverse_transform(preds, axis=-1).numpy()
+            preds = self.test_dataset.inverse_transform(preds, axis=-1)
             # [B,N,T,1]
-            trues = self.test_dataset.inverse_transform(trues, axis=-1).numpy()
+            trues = self.test_dataset.inverse_transform(trues, axis=-1)
+
+            if dist.get_world_size() > 1:
+                all_preds = []
+                all_trues = []
+                dist.all_gather_object(all_preds, preds)
+                dist.all_gather_object(all_trues, trues)
+                if dist.get_rank() == 0:
+                    preds = np.concatenate(
+                        [all_preds[i] for i in range(dist.get_world_size())], axis=0
+                    )
+                    trues = np.concatenate(
+                        [all_trues[i] for i in range(dist.get_world_size())], axis=0
+                    )
+                    paddle.device.cuda.empty_cache()
+                else:
+                    paddle.device.cuda.empty_cache()
+                    return
 
             self.logger.info(f"preds: {preds.shape}")
             self.logger.info(f"tgts: {trues.shape}")
