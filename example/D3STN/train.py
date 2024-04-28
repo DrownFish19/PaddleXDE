@@ -13,6 +13,9 @@ import visualdl
 from args import args
 from dataset import TrafficFlowDataset
 from model.d3stn import D3STN
+from paddle.distributed.fleet.utils.hybrid_parallel_util import (
+    fused_allreduce_gradients,
+)
 from utils.utils import (
     CosineAnnealingWithWarmupDecay,
     Logger,
@@ -216,7 +219,7 @@ class Trainer:
             },
             {
                 "params": [self.encoder_idx],
-                "learning_rate": self.training_args.learning_rate * 0.1,
+                "learning_rate": self.training_args.learning_rate * 10,
             },
         ]
 
@@ -390,8 +393,10 @@ class Trainer:
             tgt_hour_idx,
         )
         loss = self.criterion(preds, tgt)
-
         loss.backward()
+
+        fused_allreduce_gradients([self.encoder_idx], None)
+
         self.optimizer.step()
         self.optimizer.clear_grad()
 

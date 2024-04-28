@@ -56,6 +56,6 @@ class DelayIndex(paddle.autograd.PyLayer):
         # 在计算的过程中，无需更新history，仅更新lags即可
         (derivative_indexed_history,) = ctx.saved_tensor()
         grad = grad_y * derivative_indexed_history
-        grad = paddle.sum(grad, axis=[0, 1, 3])
+        grad = paddle.mean(paddle.sum(grad, axis=[1, 3]), axis=[0])
         return grad, None, None
         # return None, grad_y_lags * derivative_lags, None, None, None
