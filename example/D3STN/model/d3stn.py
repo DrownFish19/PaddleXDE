@@ -159,7 +159,7 @@ class D3STN(nn.Layer):
         delay_t = paddle.arange(src.shape[2], dtype=paddle.int64)
         tgt_idx = paddle.concat([delay_t[-1:], tgt_idx])
 
-        output = ddeint(
+        output, delay = ddeint(
             drift_f=self.decode,
             delay_f=self.encode,
             y0=y0,
@@ -172,4 +172,4 @@ class D3STN(nn.Layer):
             **kwargs,
         )
 
-        return output
+        return output, delay

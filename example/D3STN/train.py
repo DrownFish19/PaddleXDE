@@ -34,7 +34,7 @@ class Trainer:
         self.training_args = training_args
         # 创建文件保存位置
         self.folder_dir = (
-            f"MAE_{training_args.model_name}_eLayer{training_args.encoder_num_layers}_"
+            f"MAE_{training_args.model_name}_ddefunc{training_args.solver}_eLayer{training_args.encoder_num_layers}_"
             + f"dLayer{training_args.decoder_num_layers}_head{training_args.head}_dm{training_args.d_model}_"
             + f"input{training_args.input_size}_"
             + f"doutput{training_args.output_size}_drop{training_args.dropout}_"
@@ -83,6 +83,8 @@ class Trainer:
         self._build_data()  # 创建训练数据
         self._build_model()  # 创建模型
         self._build_optim()  # 创建优化器
+
+        self.global_step = 0
 
     def _build_data(self):
         self.train_dataset = TrafficFlowDataset(self.training_args, "train")
@@ -219,7 +221,7 @@ class Trainer:
             },
             {
                 "params": [self.encoder_idx],
-                "learning_rate": self.training_args.learning_rate * 10,
+                "learning_rate": self.training_args.learning_rate * 0.1,
             },
         ]
 
@@ -275,7 +277,7 @@ class Trainer:
         self.logger.info("start train...")
 
         s_time = time.time()
-        best_eval_loss, best_epoch, global_step = np.inf, 0, 0
+        best_eval_loss, best_epoch, self.global_step = np.inf, 0, 0
         for epoch in range(
             self.training_args.start_epoch, self.training_args.train_epochs
         ):
@@ -284,10 +286,15 @@ class Trainer:
             self.lr_scheduler.step()
             for batch_index, batch_data in enumerate(self.train_dataloader):
                 _, training_loss = self.train_one_step(batch_data)
-                self.writer.add_scalar("train/loss", training_loss, global_step)
-                self.writer.add_scalar("train/lr", self.optimizer.get_lr(), global_step)
+                if dist.get_rank() == 0:
+                    self.writer.add_scalar(
+                        "train/loss", training_loss, self.global_step
+                    )
+                    self.writer.add_scalar(
+                        "train/lr", self.optimizer.get_lr(), self.global_step
+                    )
                 epoch_step += 1
-                global_step += 1
+                self.global_step += 1
 
             self.logger.info(f"learning_rate: {self.optimizer.get_lr()}")
             self.logger.info(
@@ -340,7 +347,7 @@ class Trainer:
         )
 
         s_time = time.time()
-        best_eval_loss, best_epoch, global_step = np.inf, 0, 0
+        best_eval_loss, best_epoch = np.inf, 0
         for epoch in range(
             self.training_args.train_epochs,
             self.training_args.train_epochs + self.training_args.finetune_epochs,
@@ -350,10 +357,15 @@ class Trainer:
             self.lr_scheduler.step()
             for batch_index, batch_data in enumerate(self.train_dataloader):
                 _, training_loss = self.train_one_step(batch_data)
-                self.writer.add_scalar("train/loss", training_loss, global_step)
-                self.writer.add_scalar("train/lr", self.optimizer.get_lr(), global_step)
+                if dist.get_rank() == 0:
+                    self.writer.add_scalar(
+                        "train/loss", training_loss, self.global_step
+                    )
+                    self.writer.add_scalar(
+                        "train/lr", self.optimizer.get_lr(), self.global_step
+                    )
                 epoch_step += 1
-                global_step += 1
+                self.global_step += 1
 
             self.logger.info(f"learning_rate: {self.optimizer.get_lr()}")
             self.logger.info(
@@ -382,7 +394,7 @@ class Trainer:
 
         src, src_day_idx, src_hour_idx, tgt, tgt_day_idx, tgt_hour_idx = batch_data
 
-        preds = self.model(
+        preds, delay = self.model(
             src,
             self.encoder_idx,
             src_day_idx,
@@ -392,7 +404,13 @@ class Trainer:
             tgt_day_idx,
             tgt_hour_idx,
         )
-        loss = self.criterion(preds, tgt)
+
+        delay_log_softmax = paddle.nn.functional.log_softmax(delay, axis=-2)
+        tgt_softmax = paddle.nn.functional.softmax(tgt, axis=-2)
+
+        loss = self.criterion(preds, tgt) + paddle.nn.functional.kl_div(
+            delay_log_softmax, tgt_softmax
+        )
         loss.backward()
 
         fused_allreduce_gradients([self.encoder_idx], None)
@@ -407,7 +425,7 @@ class Trainer:
 
         src, src_day_idx, src_hour_idx, tgt, tgt_day_idx, tgt_hour_idx = batch_data
 
-        preds = self.model(
+        preds, _ = self.model(
             src,
             self.encoder_idx,
             src_day_idx,
@@ -426,7 +444,7 @@ class Trainer:
 
         src, src_day_idx, src_hour_idx, tgt, tgt_day_idx, tgt_hour_idx = batch_data
 
-        preds = self.model(
+        preds, _ = self.model(
             src,
             self.encoder_idx,
             src_day_idx,
@@ -446,7 +464,6 @@ class Trainer:
             start_time = time.time()
             for batch_index, batch_data in enumerate(self.eval_dataloader):
                 predict_output, eval_loss = self.eval_one_step(batch_data)
-                self.writer.add_scalar(f"eval/loss-{epoch}", eval_loss, batch_index)
                 all_eval_loss += eval_loss
 
             eval_loss = (all_eval_loss / len(self.eval_dataloader)).cpu().numpy()
@@ -471,7 +488,6 @@ class Trainer:
             for batch_index, batch_data in enumerate(self.test_dataloader):
                 tgt = batch_data[3]
                 predict_output, test_loss = self.test_one_step(batch_data)
-                self.writer.add_scalar(f"test/loss-{epoch}", test_loss, batch_index)
                 all_test_loss += test_loss
                 preds.append(predict_output.detach().numpy())
                 tgts.append(tgt.detach().numpy())

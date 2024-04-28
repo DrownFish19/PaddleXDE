@@ -40,4 +40,4 @@ def ddeint(
     s = solver(xde, xde.input_y0, interp=fixed_solver_interp, **options)
     solution = s.integrate(y_t_span)
 
-    return solution
+    return solution, delay
