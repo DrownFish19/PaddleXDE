@@ -112,7 +112,8 @@ class DecoderLayer(nn.Layer):
                 3,
             )
         self.norm = nn.LayerNorm(size)
-        self.dropout = nn.Dropout(dropout)
+        self.norm2 = nn.LayerNorm(size)
+        self.norm3 = nn.LayerNorm(size)
 
     def forward(self, x, memory, past_key_values):
         """
@@ -123,16 +124,13 @@ class DecoderLayer(nn.Layer):
         m = memory
 
         # [B,N,T,D]
-        residual = x
-        x = self.norm(x)
         x, past_key_values = self.self_attn(
             x, x, x, past_key_values, is_mask=True, use_cache=True
         )
-        x = residual + self.dropout(x)
 
         # [B,N,T,D]
-        x = self.sublayer[1](x, lambda x: self.src_attn(x, m, m))
-        x = self.sublayer[2](x, self.feed_forward_gcn)
+        x = self.src_attn(x, m, m)
+        x = self.feed_forward_gcn(x)
         return x, past_key_values
 
 

@@ -46,11 +46,13 @@ class Trainer:
         self.save_path = os.path.join(
             "example/D3STN/experiments", training_args.dataset_name, self.folder_dir
         )
-        os.makedirs(self.save_path, exist_ok=True)
+        if dist.get_rank() == 0:
+            os.makedirs(self.save_path, exist_ok=True)
+            self.writer = visualdl.LogWriter(
+                logdir=os.path.join(self.save_path, "visualdl")
+            )
+        dist.barrier()
         self.logger = Logger("D3STN", os.path.join(self.save_path, "log.txt"))
-        self.writer = visualdl.LogWriter(
-            logdir=os.path.join(self.save_path, "visualdl")
-        )
 
         # 输出文件保存信息
         if training_args.start_epoch == 0:
@@ -405,12 +407,16 @@ class Trainer:
             tgt_hour_idx,
         )
 
-        delay_log_softmax = paddle.nn.functional.log_softmax(delay, axis=-2)
-        tgt_softmax = paddle.nn.functional.softmax(tgt, axis=-2)
+        # delay_log_softmax = paddle.nn.functional.log_softmax(delay, axis=-2)
+        # preds_log_softmax = paddle.nn.functional.log_softmax(preds, axis=-2)
+        # tgt_softmax = paddle.nn.functional.softmax(tgt, axis=-2)
+        # loss = (
+        #     self.criterion(preds, tgt)
+        #     + 0.1 * paddle.nn.functional.kl_div(delay_log_softmax, tgt_softmax)
+        #     + 0.1 * paddle.nn.functional.kl_div(preds_log_softmax, tgt_softmax)
+        # )
+        loss = self.criterion(preds, tgt)
 
-        loss = self.criterion(preds, tgt) + paddle.nn.functional.kl_div(
-            delay_log_softmax, tgt_softmax
-        )
         loss.backward()
 
         fused_allreduce_gradients([self.encoder_idx], None)
