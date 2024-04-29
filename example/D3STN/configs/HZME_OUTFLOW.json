@@ -1,8 +1,8 @@
 {
     "dataset_name": "HZME_OUTFLOW",
-    "data_path": "example/D3STN/TrafficFlowData/HZME_OUTFLOW/HZME_OUTFLOW.npz",
-    "adj_path": "example/D3STN/TrafficFlowData/HZME_OUTFLOW/HZME_OUTFLOW.csv",
-    "sc_path": "example/D3STN/TrafficFlowData/HZME_OUTFLOW/SCORR_HZME_OUTFLOW_0.6_C16.npy",
+    "data_path": "TrafficFlowData/HZME_OUTFLOW/HZME_OUTFLOW.npz",
+    "adj_path": "TrafficFlowData/HZME_OUTFLOW/HZME_OUTFLOW.csv",
+    "sc_path": "TrafficFlowData/HZME_OUTFLOW/SCORR_HZME_OUTFLOW.npy",
     "split": "6:2:2",
     "scale": 1,
     "num_nodes": 80,

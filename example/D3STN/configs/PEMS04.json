@@ -1,8 +1,8 @@
 {
     "dataset_name": "PEMS04",
-    "data_path": "example/D3STN/TrafficFlowData/PEMS04/PEMS04.npz",
-    "adj_path": "example/D3STN/TrafficFlowData/D3STN/TrafficFlowData/PEMS04/PEMS04.csv",
-    "sc_path": "example/D3STN/TrafficFlowData/PEMS04/SCORR_PEMS04_0.6_C16.npy",
+    "data_path": "TrafficFlowData/PEMS04/PEMS04.npz",
+    "adj_path": "TrafficFlowData/D3STN/TrafficFlowData/PEMS04/PEMS04.csv",
+    "sc_path": "TrafficFlowData/PEMS04/SCORR_PEMS04_0.6_C16.npy",
     "split": "6:2:2",
     "scale": 1,
     "num_nodes": 307,
