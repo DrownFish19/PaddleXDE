@@ -1,5 +1,5 @@
 import argparse
-import os
+import json
 
 parser = argparse.ArgumentParser(description="Traffic Flow Forecasting")
 # device config
@@ -13,17 +13,17 @@ parser.add_argument(
 parser.add_argument(
     "--data_path",
     type=str,
-    default="example/D3STN/TrafficFlowData/HZME_OUTFLOW/HZME_OUTFLOW.npz",
+    default="TrafficFlowData/HZME_OUTFLOW/HZME_OUTFLOW.npz",
 )
 parser.add_argument(
     "--adj_path",
     type=str,
-    default="example/D3STN/TrafficFlowData/HZME_OUTFLOW/HZME_OUTFLOW.csv",
+    default="TrafficFlowData/HZME_OUTFLOW/HZME_OUTFLOW.csv",
 )
 parser.add_argument(
     "--sc_path",
     type=str,
-    default="example/D3STN/TrafficFlowData/HZME_OUTFLOW/SCORR_HZME_OUTFLOW.npy",
+    default="TrafficFlowData/HZME_OUTFLOW/SCORR_HZME_OUTFLOW.npy",
 )
 parser.add_argument("--split", type=str, default="6:2:2", help="data split")
 parser.add_argument("--scale", type=bool, default=True, help="data norm scale")
@@ -68,6 +68,21 @@ parser.add_argument("--continue_training", type=bool, default=False, help="")
 parser.add_argument("--fp16", type=bool, default=False, help="")
 parser.add_argument("--distribute", type=bool, default=False, help="")
 
-# args = parser.parse_args("")
-args = parser.parse_args()
-os.environ["CUDA_VISIBLE_DEVICES"] = args.devices
+
+def get_args_from_json(json_file_path, args_obj):
+    with open(json_file_path) as f:
+        json_dict = json.load(fp=f)
+
+    for key in json_dict.keys():
+        setattr(args_obj, key, json_dict[key])
+
+    return args_obj
+
+
+args_obj = parser.parse_args()
+# args = get_args_from_json("example/D3STN/configs/PEMS03.json", args_obj)
+# args = get_args_from_json("example/D3STN/configs/PEMS04.json", args_obj)
+# args = get_args_from_json("example/D3STN/configs/PEMS07.json", args_obj)
+# args = get_args_from_json("example/D3STN/configs/PEMS08.json", args_obj)
+# args = get_args_from_json("example/D3STN/configs/HZME_INFLOW.json", args_obj)
+args = get_args_from_json("example/D3STN/configs/HZME_OUTFLOW.json", args_obj)
