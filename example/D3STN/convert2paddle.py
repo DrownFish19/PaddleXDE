@@ -4,7 +4,7 @@ import numpy as np
 import paddle
 import torch
 from args import args
-from corrstn import CorrSTN
+from d3stn import D3STN
 from utils import get_adjacency_matrix_2direction, norm_adj_matrix
 
 encoder_layer_num = 4
@@ -83,7 +83,7 @@ adj_matrix = paddle.to_tensor(norm_adj_matrix(adj_matrix), default_dtype)
 sc_matrix = np.load(args.sc_path)[0, :, :]
 sc_matrix = paddle.to_tensor(norm_adj_matrix(sc_matrix), default_dtype)
 
-model = CorrSTN(args, adj_matrix, sc_matrix)
+model = D3STN(args, adj_matrix, sc_matrix)
 
 ckpt = "example/CorrSTN/ckpt/epoch_143.params"
 torch_weight = torch.load(ckpt, map_location=torch.device("cpu"))

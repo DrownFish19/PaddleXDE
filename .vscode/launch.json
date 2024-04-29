@@ -71,10 +71,10 @@
             }
         },
         {
-            "name": "example_CorrSTN_ddeint",
+            "name": "example_D3STN_ddeint",
             "type": "python",
             "request": "launch",
-            "program": "${workspaceFolder}/example/CorrSTN/train_dde.py",
+            "program": "${workspaceFolder}/example/D3STN/train_dde.py",
             "console": "integratedTerminal",
             "justMyCode": false,
             "args": [],
