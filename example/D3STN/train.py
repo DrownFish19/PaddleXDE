@@ -10,7 +10,6 @@ import paddle.nn as nn
 import paddle.optimizer as optim
 from d3stn import D3STN, DecoderIndex
 from dataset import TrafficFlowDataset
-from paddle.distributed import fleet
 from paddle.nn.initializer import Constant, XavierUniform
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from utils import (
@@ -223,9 +222,6 @@ class Trainer:
             multi_precision=True,
         )
 
-        if self.training_args.distribute and dist.get_world_size() > 1:
-            self.optimizer = fleet.distributed_optimizer(self.optimizer)
-
         self.logger.info("Optimizer's state_dict:")
         for var_name in self.optimizer.state_dict():
             self.logger.info(f"{var_name} \t {self.optimizer.state_dict()[var_name]}")
@@ -370,8 +366,6 @@ class Trainer:
             weight_decay=float(self.training_args.weight_decay),
             multi_precision=True,
         )
-        if self.training_args.distribute and dist.get_world_size() > 1:
-            self.optimizer = fleet.distributed_optimizer(self.optimizer)
         self.finetune = True
 
     def train_one_step(self, src, tgt):
@@ -434,10 +428,17 @@ class Trainer:
             his=src,
             his_span=paddle.arange(self.training_args.his_len),
         )
-        encoder_output = self.net.encode(encoder_input)
 
+        if self.training_args.distribute and dist.get_world_size() > 1:
+            encoder_func = self.net._layers.encode
+            decoder_func = self.net._layers.decode
+        else:
+            encoder_func = self.net.encode
+            decoder_func = self.net.decode
+
+        encoder_output = encoder_func(encoder_input)
         preds = ddeint(
-            func=self.net.decode,
+            func=decoder_func,
             y0=y0,
             t_span=paddle.arange(1 + 1),
             lags=None,
@@ -469,10 +470,18 @@ class Trainer:
             his=src,
             his_span=paddle.arange(self.training_args.his_len),
         )
-        encoder_output = self.net.encode(encoder_input)
+
+        if self.training_args.distribute and dist.get_world_size() > 1:
+            encoder_func = self.net._layers.encode
+            decoder_func = self.net._layers.decode
+        else:
+            encoder_func = self.net.encode
+            decoder_func = self.net.decode
+
+        encoder_output = encoder_func(encoder_input)
 
         preds = ddeint(
-            func=self.net.decode,
+            func=decoder_func,
             y0=y0,
             t_span=paddle.arange(1 + 1),
             lags=None,
@@ -501,10 +510,18 @@ class Trainer:
             his=src,
             his_span=paddle.arange(self.training_args.his_len),
         )
-        encoder_output = self.net.encode(encoder_input)
+
+        if self.training_args.distribute and dist.get_world_size() > 1:
+            encoder_func = self.net._layers.encode
+            decoder_func = self.net._layers.decode
+        else:
+            encoder_func = self.net.encode
+            decoder_func = self.net.decode
+
+        encoder_output = encoder_func(encoder_input)
 
         preds = ddeint(
-            func=self.net.decode,
+            func=decoder_func,
             y0=y0,
             t_span=paddle.arange(1 + 1),
             lags=None,
@@ -542,7 +559,7 @@ class Trainer:
                 eval_loss = np.mean(
                     [all_eval_loss[i] for i in range(dist.get_world_size())]
                 )
-                self.logger.info(f"eval cost time: {time.time() - start_time}s")
+                self.logger.info(f"eval cost time: {time() - start_time}s")
                 self.logger.info(f"eval_loss: {eval_loss}")
                 paddle.device.cuda.empty_cache()
         return eval_loss
