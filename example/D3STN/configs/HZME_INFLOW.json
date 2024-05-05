@@ -1,7 +1,7 @@
 {
     "dataset_name": "HZME_INFLOW",
     "data_path": "TrafficFlowData/HZME_INFLOW/HZME_INFLOW.npz",
-    "adj_path": "TrafficFlowData/HZME_INFLOW/HZME_INFLOW_adj.csv",
+    "adj_path": "TrafficFlowData/HZME_INFLOW/HZME_INFLOW.csv",
     "sc_path": "TrafficFlowData/HZME_INFLOW/SCORR_HZME_INFLOW.npy",
     "split": "6:2:2",
     "scale": 1,

@@ -37,14 +37,15 @@ class Trainer:
             f"MAE_{training_args.model_name}_elayer{training_args.encoder_num_layers}_"
             + f"dlayer{training_args.decoder_num_layers}_head{training_args.head}_dm{training_args.d_model}_"
             + f"einput{training_args.encoder_input_size}_dinput{training_args.decoder_input_size}_"
-            + f"doutput{training_args.decoder_output_size}_drop{training_args.dropout}_"
+            + f"doutput{training_args.decoder_output_size}_elen{training_args.his_len}_"
+            + f"dlen{training_args.tgt_len}_drop{training_args.dropout}_"
             + f"lr{training_args.learning_rate}_wd{training_args.weight_decay}_bs{training_args.batch_size}_"
             + f"topk{training_args.top_k}_att{training_args.attention}_trepoch{training_args.train_epochs}_"
             + f"finepoch{training_args.finetune_epochs}_dde"
         )
 
         self.save_path = os.path.join(
-            "experiments", training_args.dataset_name, self.folder_dir
+            "example/D3STN", "experiments", training_args.dataset_name, self.folder_dir
         )
 
         if dist.get_rank() == 0:
@@ -80,6 +81,12 @@ class Trainer:
         self.val_dataset = TrafficFlowDataset(self.training_args, "val")
         self.test_dataset = TrafficFlowDataset(self.training_args, "test")
 
+        if self.training_args.distribute and dist.get_world_size() > 1:
+            assert self.training_args.batch_size % dist.get_world_size() == 0
+            self.training_args.batch_size = int(
+                self.training_args.batch_size / dist.get_world_size()
+            )
+
         train_sampler = io.DistributedBatchSampler(
             self.train_dataset,
             batch_size=self.training_args.batch_size,
@@ -87,10 +94,14 @@ class Trainer:
             drop_last=True,
         )
         eval_sampler = io.DistributedBatchSampler(
-            self.val_dataset, batch_size=self.training_args.batch_size, drop_last=True
+            self.val_dataset,
+            batch_size=self.training_args.batch_size * 12,
+            drop_last=True,
         )
         test_sampler = io.DistributedBatchSampler(
-            self.test_dataset, batch_size=self.training_args.batch_size, drop_last=True
+            self.test_dataset,
+            batch_size=self.training_args.batch_size * 12,
+            drop_last=True,
         )
         self.train_dataloader = io.DataLoader(
             self.train_dataset, batch_sampler=train_sampler
@@ -645,5 +656,5 @@ class Trainer:
 
 if __name__ == "__main__":
     trainer = Trainer(training_args=args.args)
-    trainer.train()
+    # trainer.train()
     trainer.run_test()
