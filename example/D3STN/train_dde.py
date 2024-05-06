@@ -457,7 +457,7 @@ class Trainer:
             if self.training_args.distribute and dist.get_world_size() > 1:
                 return self.net.no_sync()
             else:
-                contextlib.nullcontext()
+                return contextlib.nullcontext()
 
         with dist_no_sync():
             encoder_output = encoder_func(encoder_input)
