@@ -232,7 +232,7 @@ class Trainer:
         # 定义优化器，传入所有网络参数
         self.optimizer = optim.Adam(
             parameters=parameters,
-            learning_rate=1.0,
+            learning_rate=self.lr_scheduler,
             weight_decay=float(self.training_args.weight_decay),
             multi_precision=True,
         )
@@ -377,7 +377,7 @@ class Trainer:
         # 定义优化器，传入所有网络参数
         self.optimizer = optim.Adam(
             parameters=parameters,
-            learning_rate=1.0,
+            learning_rate=self.lr_scheduler,
             weight_decay=float(self.training_args.weight_decay),
             multi_precision=True,
         )
