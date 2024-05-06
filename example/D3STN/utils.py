@@ -5,6 +5,7 @@ import os
 from math import sqrt
 
 import numpy as np
+import paddle.distributed as dist
 import paddle.nn as nn
 import pandas as pd
 from paddle.optimizer.lr import LRScheduler
@@ -86,19 +87,24 @@ class Logger:
         return logger
 
     def info(self, message):
-        self.logger.info(message)
+        if dist.get_rank() == 0:
+            self.logger.info(message)
 
     def warning(self, message):
-        self.logger.warning(message)
+        if dist.get_rank() == 0:
+            self.logger.warning(message)
 
     def debug(self, message):
-        self.logger.debug(message)
+        if dist.get_rank() == 0:
+            self.logger.debug(message)
 
     def error(self, message):
-        self.logger.error(message)
+        if dist.get_rank() == 0:
+            self.logger.error(message)
 
     def critical(self, message):
-        self.logger.critical(message)
+        if dist.get_rank() == 0:
+            self.logger.critical(message)
 
 
 def clones(module, N):

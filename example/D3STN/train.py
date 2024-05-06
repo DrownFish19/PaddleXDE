@@ -10,6 +10,9 @@ import paddle.nn as nn
 import paddle.optimizer as optim
 from d3stn import D3STN, DecoderIndex
 from dataset import TrafficFlowDataset
+from paddle.distributed.fleet.utils.hybrid_parallel_util import (
+    fused_allreduce_gradients,
+)
 from paddle.nn.initializer import Constant, XavierUniform
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from utils import (
@@ -206,8 +209,8 @@ class Trainer:
         self.lr_scheduler = CosineAnnealingWithWarmupDecay(
             max_lr=1,
             min_lr=0.1,
-            warmup_step=0.2 * self.training_args.train_epochs,
-            decay_step=0.8 * self.training_args.train_epochs,
+            warmup_step=self.training_args.warmup_step,
+            decay_step=self.training_args.decay_step,
         )
 
         parameters = [
@@ -217,7 +220,7 @@ class Trainer:
             },
             {
                 "params": [self.decoder_idx],
-                "learning_rate": self.training_args.learning_rate * 0.1,
+                "learning_rate": 0.0,
             },
             {
                 "params": [self.encoder_idx],
@@ -228,7 +231,7 @@ class Trainer:
         # 定义优化器，传入所有网络参数
         self.optimizer = optim.Adam(
             parameters=parameters,
-            learning_rate=self.lr_scheduler,
+            learning_rate=1.0,
             weight_decay=float(self.training_args.weight_decay),
             multi_precision=True,
         )
@@ -291,7 +294,7 @@ class Trainer:
         while (
             epoch < self.training_args.train_epochs + self.training_args.finetune_epochs
         ):
-            # finetune => load best trainging model
+            # finetune => load best training model
             if epoch == self.training_args.train_epochs:
                 self.compute_test_loss(epoch)
                 self._init_finetune()
@@ -351,8 +354,8 @@ class Trainer:
         self.lr_scheduler = CosineAnnealingWithWarmupDecay(
             max_lr=1,
             min_lr=0.1,
-            warmup_step=0.2 * self.training_args.finetune_epochs,
-            decay_step=0.8 * self.training_args.finetune_epochs,
+            warmup_step=self.training_args.warmup_step,
+            decay_step=self.training_args.decay_step,
         )
 
         parameters = [
@@ -362,18 +365,18 @@ class Trainer:
             },
             {
                 "params": [self.decoder_idx],
-                "learning_rate": self.training_args.learning_rate,
+                "learning_rate": self.training_args.learning_rate * 0.1,
             },
             {
                 "params": [self.encoder_idx],
-                "learning_rate": self.training_args.learning_rate,
+                "learning_rate": 0.0,
             },
         ]
 
         # 定义优化器，传入所有网络参数
         self.optimizer = optim.Adam(
             parameters=parameters,
-            learning_rate=self.lr_scheduler,
+            learning_rate=1.0,
             weight_decay=float(self.training_args.weight_decay),
             multi_precision=True,
         )
@@ -412,6 +415,8 @@ class Trainer:
 
         loss = self.criterion(preds, tgt[..., :1])
         loss.backward()
+        if self.training_args.distribute and dist.get_world_size() > 1:
+            fused_allreduce_gradients([self.encoder_idx, self.decoder_idx], None)
         self.optimizer.step()
         self.optimizer.clear_grad()
 
@@ -464,6 +469,8 @@ class Trainer:
 
         loss = self.criterion(preds, tgt[..., :1])
         loss.backward()
+        if self.training_args.distribute and dist.get_world_size() > 1:
+            fused_allreduce_gradients([self.encoder_idx, self.decoder_idx], None)
         self.optimizer.step()
         self.optimizer.clear_grad()
 
