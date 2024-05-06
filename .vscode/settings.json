@@ -9,8 +9,28 @@
     "python.testing.pytestEnabled": false,
     "python.testing.unittestEnabled": true,
     "cSpell.words": [
+        "arange",
+        "ddeint",
+        "deidx",
+        "dinput",
+        "dlayer",
+        "dlen",
+        "doutput",
+        "dtype",
+        "einput",
+        "elayer",
+        "elen",
+        "enidx",
+        "finepoch",
+        "finetune",
+        "interp",
+        "logdir",
         "optim",
         "paddlexde",
+        "preds",
+        "tgts",
+        "topk",
+        "trepoch",
         "visualdl"
     ]
 }

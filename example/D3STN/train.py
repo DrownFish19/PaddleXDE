@@ -1,3 +1,4 @@
+import contextlib
 import os
 from time import time
 
@@ -220,7 +221,7 @@ class Trainer:
             },
             {
                 "params": [self.decoder_idx],
-                "learning_rate": 0.0,
+                "learning_rate": self.training_args.learning_rate * 0.1,
             },
             {
                 "params": [self.encoder_idx],
@@ -365,11 +366,11 @@ class Trainer:
             },
             {
                 "params": [self.decoder_idx],
-                "learning_rate": self.training_args.learning_rate * 0.1,
+                "learning_rate": self.training_args.learning_rate,
             },
             {
                 "params": [self.encoder_idx],
-                "learning_rate": 0.0,
+                "learning_rate": self.training_args.learning_rate,
             },
         ]
 
@@ -452,25 +453,35 @@ class Trainer:
             encoder_func = self.net.encode
             decoder_func = self.net.decode
 
-        encoder_output = encoder_func(encoder_input)
-        preds = ddeint(
-            func=decoder_func,
-            y0=y0,
-            t_span=paddle.arange(1 + 1),
-            lags=None,
-            his=encoder_output,
-            his_span=None,
-            solver=self.dde_solver,
-            his_processed=True,
-            fixed_solver_interp="",
-        )
-        pred_len = y0.shape[-2]
-        preds = preds[:, :, -pred_len:, :1]
+        def dist_no_sync():
+            if self.training_args.distribute and dist.get_world_size() > 1:
+                return self.net.no_sync()
+            else:
+                contextlib.nullcontext()
 
-        loss = self.criterion(preds, tgt[..., :1])
-        loss.backward()
+        with dist_no_sync():
+            encoder_output = encoder_func(encoder_input)
+            preds = ddeint(
+                func=decoder_func,
+                y0=y0,
+                t_span=paddle.arange(1 + 1),
+                lags=None,
+                his=encoder_output,
+                his_span=None,
+                solver=self.dde_solver,
+                his_processed=True,
+                fixed_solver_interp="",
+            )
+            pred_len = y0.shape[-2]
+            preds = preds[:, :, -pred_len:, :1]
+
+            loss = self.criterion(preds, tgt[..., :1])
+            loss.backward()
+
         if self.training_args.distribute and dist.get_world_size() > 1:
-            fused_allreduce_gradients([self.encoder_idx, self.decoder_idx], None)
+            fused_allreduce_gradients(
+                list(self.net.parameters()) + [self.encoder_idx, self.decoder_idx], None
+            )
         self.optimizer.step()
         self.optimizer.clear_grad()
 
@@ -663,5 +674,5 @@ class Trainer:
 
 if __name__ == "__main__":
     trainer = Trainer(training_args=args.args)
-    # trainer.train()
+    trainer.train()
     trainer.run_test()
