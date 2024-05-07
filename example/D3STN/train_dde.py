@@ -50,7 +50,7 @@ class Trainer:
         )
 
         self.save_path = os.path.join(
-            "example/D3STN", "experiments", training_args.dataset_name, self.folder_dir
+            "experiments", training_args.dataset_name, self.folder_dir
         )
 
         if dist.get_rank() == 0:
