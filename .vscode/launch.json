@@ -73,11 +73,14 @@
             "name": "example_D3STN",
             "type": "python",
             "request": "launch",
-            "program": "${workspaceFolder}/example/D3STN/train_dde.py",
+            "program": "${workspaceFolder}/example/D3STN/train.py",
             "console": "integratedTerminal",
             "justMyCode": false,
             "cwd": "${workspaceFolder}/example/D3STN",
-            "args": [],
+            "args": [
+                "--config_json",
+                "configs/HZME_OUTFLOW.json"
+            ],
             "env": {
                 "CUDA_VISIBLE_DEVICES": "0",
                 "PYTHONPATH": "${workspaceFolder}",
@@ -94,7 +97,9 @@
             "args": [
                 "--gpus",
                 "0,1,2,3,4,5,6,7",
-                "${workspaceFolder}/example/D3STN/train_dde.py"
+                "${workspaceFolder}/example/D3STN/train.py",
+                "--config_json",
+                "configs/HZME_OUTFLOW.json"
             ],
             "env": {
                 "CUDA_VISIBLE_DEVICES": "0,1,2,3,4,5,6,7",

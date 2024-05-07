@@ -2,9 +2,8 @@ import argparse
 import json
 
 parser = argparse.ArgumentParser(description="Traffic Flow Forecasting")
-# device config
-parser.add_argument("--devices", type=str, default="0,1,2,3,4,5,6,7", help="devices")
-parser.add_argument("--use_gpu", type=bool, default=True, help="use gpu or not")
+
+parser.add_argument("--config_json", type=str, default="", help="config json")
 
 # data config
 parser.add_argument(
@@ -71,7 +70,11 @@ def get_args_from_json(json_file_path, args_obj):
 
 
 args_obj = parser.parse_args()
-args = get_args_from_json("configs/PEMS03.json", args_obj)
+if args_obj.config_json != "":
+    args = get_args_from_json(args_obj.config_json, args_obj)
+else:
+    args = args_obj
+# args = get_args_from_json("configs/PEMS03.json", args_obj)
 # args = get_args_from_json("configs/PEMS04.json", args_obj)
 # args = get_args_from_json("configs/PEMS07.json", args_obj)
 # args = get_args_from_json("configs/PEMS08.json", args_obj)
