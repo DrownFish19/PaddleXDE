@@ -366,11 +366,11 @@ class Trainer:
             },
             {
                 "params": [self.decoder_idx],
-                "learning_rate": self.training_args.learning_rate,
+                "learning_rate": 0.0,
             },
             {
                 "params": [self.encoder_idx],
-                "learning_rate": self.training_args.learning_rate,
+                "learning_rate": 0.0,
             },
         ]
 
@@ -576,7 +576,6 @@ class Trainer:
                 src = paddle.cast(src, paddle.get_default_dtype())
                 tgt = paddle.cast(tgt, paddle.get_default_dtype())
                 predict_output, eval_loss = self.eval_one_step(src, tgt)
-                self.writer.add_scalar(f"eval/loss-{epoch}", eval_loss, batch_index)
 
                 all_eval_loss += eval_loss
 
@@ -603,7 +602,6 @@ class Trainer:
                 src = paddle.cast(src, paddle.get_default_dtype())
                 tgt = paddle.cast(tgt, paddle.get_default_dtype())
                 predict_output, test_loss = self.test_one_step(src, tgt)
-                self.writer.add_scalar(f"test/loss-{epoch}", test_loss, batch_index)
 
                 preds.append(predict_output)
                 tgts.append(tgt[..., :1])
@@ -635,13 +633,6 @@ class Trainer:
 
             self.logger.info(f"preds: {preds.shape}")
             self.logger.info(f"tgts: {trues.shape}")
-
-            for index in range(trues.shape[0]):
-                scalar_dict = {
-                    "true": trues[index, 0, 6, 0],
-                    "pred": preds[index, 0, 6, 0],
-                }
-                self.writer.add_scalars(f"test/line-{epoch}", scalar_dict, index)
 
             # 计算误差
             excel_list = []

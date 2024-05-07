@@ -73,7 +73,7 @@
             "name": "example_D3STN",
             "type": "python",
             "request": "launch",
-            "program": "${workspaceFolder}/example/D3STN/train.py",
+            "program": "${workspaceFolder}/example/D3STN/train_dde.py",
             "console": "integratedTerminal",
             "justMyCode": false,
             "args": [],
@@ -92,7 +92,7 @@
             "args": [
                 "--gpus",
                 "0,1,2,3,4,5,6,7",
-                "${workspaceFolder}/example/D3STN/train.py"
+                "${workspaceFolder}/example/D3STN/train_dde.py"
             ],
             "env": {
                 "CUDA_VISIBLE_DEVICES": "0,1,2,3,4,5,6,7",
