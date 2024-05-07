@@ -28,6 +28,7 @@ from visualdl import LogWriter
 
 from paddlexde.functional import ddeint
 from paddlexde.solver.fixed_solver import RK4, Euler, Midpoint
+from paddlexde.version import commit
 from paddlexde.xde.base_dde import HistoryIndex
 
 
@@ -65,6 +66,7 @@ class Trainer:
         elif training_args.start_epoch > 0:
             self.logger.info(f"train from params directory {self.save_path}")
 
+        self.logger.info(f"git commit: {commit}")
         self.logger.info(f"save folder: {self.folder_dir}")
         self.logger.info(f"save path  : {self.save_path}")
         self.logger.info(f"log  file  : {self.logger.log_file}")
