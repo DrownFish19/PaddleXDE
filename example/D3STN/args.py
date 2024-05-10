@@ -39,7 +39,8 @@ parser.add_argument("--head", type=int, default=8, help="head")
 parser.add_argument("--kernel_size", type=int, default=3, help="kernel_size")
 parser.add_argument("--top_k", type=int, default=5, help="top_k")
 parser.add_argument("--smooth_layer_num", type=int, default=1)
-parser.add_argument("--no_adj", type=bool, default=False, help="no adj")
+parser.add_argument("--with_adj", type=bool, default=True, help="with adj")
+parser.add_argument("--with_corr", type=bool, default=True, help="with corr adj")
 parser.add_argument("--solver", type=str, default="euler", help="euler,midpoint,rk4")
 
 # train config

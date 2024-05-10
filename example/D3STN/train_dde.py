@@ -159,6 +159,9 @@ class Trainer:
         encoder_idx = paddle.concat(encoder_idx)
         decoder_idx = paddle.concat(decoder_idx)
 
+        self.init_encoder_idx = encoder_idx
+        self.init_decoder_idx = decoder_idx
+
         self.encoder_idx = paddle.create_parameter(
             shape=encoder_idx.shape, dtype="float32"
         )
@@ -354,17 +357,10 @@ class Trainer:
 
         self.early_stopping.reset()
 
-        self.lr_scheduler = CosineAnnealingWithWarmupDecay(
-            max_lr=1,
-            min_lr=0.1,
-            warmup_step=self.training_args.warmup_step,
-            decay_step=self.training_args.decay_step,
-        )
-
         parameters = [
             {
                 "params": self.net.parameters(),
-                "learning_rate": self.training_args.learning_rate * 0.1,
+                "learning_rate": self.training_args.learning_rate,
             },
             {
                 "params": [self.decoder_idx],
@@ -379,7 +375,7 @@ class Trainer:
         # 定义优化器，传入所有网络参数
         self.optimizer = optim.Adam(
             parameters=parameters,
-            learning_rate=self.lr_scheduler,
+            learning_rate=1.0,
             weight_decay=float(self.training_args.weight_decay),
             multi_precision=True,
         )
@@ -403,7 +399,7 @@ class Trainer:
             his_span=paddle.arange(self.training_args.his_len),
         )
 
-        preds = ddeint(
+        preds, encoder_input = ddeint(
             func=self.net,
             y0=y0,
             t_span=paddle.arange(1 + 1),
@@ -416,7 +412,12 @@ class Trainer:
         pred_len = y0.shape[-2]
         preds = preds[:, :, -pred_len:, :1]
 
-        loss = self.criterion(preds, tgt[..., :1])
+        delay_log_softmax = paddle.nn.functional.log_softmax(
+            encoder_input[..., :1], axis=-2
+        )
+        tgt_softmax = paddle.nn.functional.softmax(tgt[..., :1], axis=-2)
+        kl_loss = paddle.nn.functional.kl_div(delay_log_softmax, tgt_softmax)
+        loss = self.criterion(preds, tgt[..., :1]) + 0.01 * kl_loss
         loss.backward()
         if self.training_args.distribute and dist.get_world_size() > 1:
             fused_allreduce_gradients([self.encoder_idx, self.decoder_idx], None)
@@ -463,7 +464,7 @@ class Trainer:
 
         with dist_no_sync():
             encoder_output = encoder_func(encoder_input)
-            preds = ddeint(
+            preds, _ = ddeint(
                 func=decoder_func,
                 y0=y0,
                 t_span=paddle.arange(1 + 1),
@@ -511,7 +512,7 @@ class Trainer:
 
         encoder_output = encoder_func(encoder_input)
 
-        preds = ddeint(
+        preds, _ = ddeint(
             func=decoder_func,
             y0=y0,
             t_span=paddle.arange(1 + 1),
@@ -551,7 +552,7 @@ class Trainer:
 
         encoder_output = encoder_func(encoder_input)
 
-        preds = ddeint(
+        preds, _ = ddeint(
             func=decoder_func,
             y0=y0,
             t_span=paddle.arange(1 + 1),
@@ -567,7 +568,22 @@ class Trainer:
 
         loss = self.criterion(preds, tgt[..., :1])
 
-        return preds, loss
+        init_encoder_input = HistoryIndex.apply(
+            lags=self.init_encoder_idx,
+            his=src,
+            his_span=paddle.arange(self.training_args.his_len),
+        )
+
+        init_delay_log_softmax = paddle.nn.functional.log_softmax(
+            init_encoder_input[..., :1], axis=-2
+        )
+        delay_log_softmax = paddle.nn.functional.log_softmax(
+            encoder_input[..., :1], axis=-2
+        )
+        tgt_softmax = paddle.nn.functional.softmax(tgt[..., :1], axis=-2)
+        init_kl_loss = paddle.nn.functional.kl_div(init_delay_log_softmax, tgt_softmax)
+        kl_loss = paddle.nn.functional.kl_div(delay_log_softmax, tgt_softmax)
+        return preds, loss, kl_loss, init_kl_loss
 
     def compute_eval_loss(self, epoch=-1):
         with paddle.no_grad():
@@ -598,19 +614,28 @@ class Trainer:
         with paddle.no_grad():
             preds = []
             tgts = []
+            kl_loss_all = 0.0
+            init_kl_loss_all = 0.0
             start_time = time()
             for batch_index, batch_data in enumerate(self.test_dataloader):
                 src, tgt = batch_data
                 src = paddle.cast(src, paddle.get_default_dtype())
                 tgt = paddle.cast(tgt, paddle.get_default_dtype())
-                predict_output, test_loss = self.test_one_step(src, tgt)
+                predict_output, test_loss, kl_loss, init_kl_loss = self.test_one_step(
+                    src, tgt
+                )
 
                 preds.append(predict_output)
                 tgts.append(tgt[..., :1])
+                kl_loss_all += kl_loss.numpy()
+                init_kl_loss_all += init_kl_loss.numpy()
             self.logger.info(f"test time on whole data: {time() - start_time} s")
 
             preds = paddle.concat(preds, axis=0)  # [B,N,T,1]
             trues = paddle.concat(tgts, axis=0)  # [B,N,T,F]
+            kl_loss = kl_loss_all / len(self.eval_dataloader)  # [M]
+            init_kl_loss = init_kl_loss_all / len(self.eval_dataloader)  # [M]
+
             # [B,N,T,1]
             preds = self.test_dataset.inverse_transform(preds, axis=-1).numpy()
             # [B,N,T,1]
@@ -619,14 +644,25 @@ class Trainer:
             if dist.get_world_size() > 1:
                 all_preds = []
                 all_trues = []
+                all_kl_loss = []
+                all_init_kl_loss = []
                 dist.all_gather_object(all_preds, preds)
                 dist.all_gather_object(all_trues, trues)
+                dist.all_gather_object(all_kl_loss, kl_loss)
+                dist.all_gather_object(all_init_kl_loss, init_kl_loss)
                 if dist.get_rank() == 0:
                     preds = np.concatenate(
                         [all_preds[i] for i in range(dist.get_world_size())], axis=0
                     )
                     trues = np.concatenate(
                         [all_trues[i] for i in range(dist.get_world_size())], axis=0
+                    )
+                    kl_loss = np.mean(
+                        [all_kl_loss[i] for i in range(dist.get_world_size())], axis=0
+                    )
+                    init_kl_loss = np.mean(
+                        [all_init_kl_loss[i] for i in range(dist.get_world_size())],
+                        axis=0,
                     )
                     paddle.device.cuda.empty_cache()
                 else:
@@ -635,6 +671,8 @@ class Trainer:
 
             self.logger.info(f"preds: {preds.shape}")
             self.logger.info(f"tgts: {trues.shape}")
+            self.logger.info(f"kl_loss: {kl_loss}")
+            self.logger.info(f"init_kl_loss: {init_kl_loss}")
 
             # 计算误差
             excel_list = []

@@ -28,6 +28,7 @@
         "optim",
         "paddlexde",
         "preds",
+        "softmax",
         "tgts",
         "topk",
         "trepoch",
