@@ -101,12 +101,12 @@ class Trainer:
         )
         eval_sampler = io.DistributedBatchSampler(
             self.val_dataset,
-            batch_size=self.training_args.batch_size * 12,
+            batch_size=self.training_args.batch_size,
             drop_last=True,
         )
         test_sampler = io.DistributedBatchSampler(
             self.test_dataset,
-            batch_size=self.training_args.batch_size * 12,
+            batch_size=self.training_args.batch_size,
             drop_last=True,
         )
         self.train_dataloader = io.DataLoader(
