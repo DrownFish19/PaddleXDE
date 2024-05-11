@@ -674,6 +674,16 @@ class Trainer:
             self.logger.info(f"kl_loss: {kl_loss}")
             self.logger.info(f"init_kl_loss: {init_kl_loss}")
 
+            from utils import smis
+
+            smis_score = smis(
+                trues.reshape(trues.shape[0], -1),
+                preds.reshape(preds.shape[0], -1),
+                m=288,
+                level=0.95,
+            )
+            self.logger.info(f"smis: {smis_score}")
+
             # 计算误差
             excel_list = []
             prediction_length = trues.shape[2]

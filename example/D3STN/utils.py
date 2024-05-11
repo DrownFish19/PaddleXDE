@@ -313,6 +313,61 @@ def masked_mape_np(y_true, y_pred, null_val=np.nan):
         return np.mean(mape) * 100
 
 
+def smis(predictions, actuals, m, level, lower_bounds=None, upper_bounds=None):
+    """
+    Calculate scaled Mean Interval Score (sMIS).
+
+    Arguments:
+    predictions: Array of predicted values of shape (B, T)
+    actuals: Array of actual values of shape (B, T)
+    lower_bounds: Array of lower bounds of prediction intervals of shape (B, T)
+    upper_bounds: Array of upper bounds of prediction intervals of shape (B, T)
+    m: Frequency parameter (e.g., 12 for monthly, 4 for quarterly)
+    level: Confidence level used for prediction interval construction (e.g., 0.95 for 95% confidence)
+
+    Returns:
+    SMIS: Scaled Mean Interval Score (numeric)
+    """
+
+    if lower_bounds is None:
+        std = np.std(predictions, axis=-1)[:, np.newaxis]
+        lower_bounds = predictions - 1.96 * std
+    if upper_bounds is None:
+        std = np.std(predictions, axis=-1)[:, np.newaxis]
+        upper_bounds = predictions + 1.96 * std
+
+    # Validate input shapes
+    assert (
+        predictions.shape == actuals.shape == lower_bounds.shape == upper_bounds.shape
+    ), "Shapes of predictions, actuals, lower_bounds, and upper_bounds must be the same"
+
+    # Calculate the number of time points T and the number of series B
+    B, N = predictions.shape
+
+    # Calculate alpha (complement of the confidence level)
+    alpha = 1 - level
+
+    # Calculate scale
+    scale = 1 / (B - m) / N * np.sum(np.abs(actuals[m:, :] - actuals[:-m, :]))
+
+    # Calculate MIS (Mean Interval Score) for each series
+    MIS = np.mean(
+        upper_bounds
+        - lower_bounds
+        + 2 / alpha * (lower_bounds - actuals) * (actuals < lower_bounds)
+        + 2 / alpha * (actuals - upper_bounds) * (actuals > upper_bounds),
+        axis=1,
+    )
+
+    # Calculate sMIS (scaled Mean Interval Score) for each series
+    SMIS = MIS / scale
+
+    # Overall sMIS (average across all series)
+    overall_SMIS = np.mean(SMIS)
+
+    return overall_SMIS
+
+
 class EarlyStopping:
     def __init__(self, patience=10, delta=0):
         self.patience = patience
