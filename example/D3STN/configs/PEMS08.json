@@ -7,7 +7,7 @@
     "scale": 1,
     "num_nodes": 170,
     "model_name": "D3STN",
-    "his_len": 2016,
+    "his_len": 300,
     "tgt_len": 12,
     "encoder_num_layers": 2,
     "decoder_num_layers": 2,

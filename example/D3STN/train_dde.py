@@ -97,17 +97,17 @@ class Trainer:
             self.train_dataset,
             batch_size=self.training_args.batch_size,
             shuffle=True,
-            drop_last=True,
+            drop_last=False,
         )
         eval_sampler = io.DistributedBatchSampler(
             self.val_dataset,
             batch_size=self.training_args.batch_size,
-            drop_last=True,
+            drop_last=False,
         )
         test_sampler = io.DistributedBatchSampler(
             self.test_dataset,
             batch_size=self.training_args.batch_size,
-            drop_last=True,
+            drop_last=False,
         )
         self.train_dataloader = io.DataLoader(
             self.train_dataset, batch_sampler=train_sampler
