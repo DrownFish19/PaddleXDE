@@ -54,6 +54,7 @@ parser.add_argument("--finetune_epochs", type=int, default=50, help="finetune ep
 parser.add_argument("--batch_size", type=int, default=16, help="batch_size")
 parser.add_argument("--patience", type=int, default=30, help="early stopping patience")
 parser.add_argument("--loss", type=str, default="mse", help="loss function")
+parser.add_argument("--kl_loss_weight", type=float, default=1.0, help="kl loss weight")
 parser.add_argument("--dropout", type=float, default=0.0, help="dropout")
 parser.add_argument("--continue_training", type=bool, default=False, help="")
 parser.add_argument("--fp16", type=bool, default=False, help="")

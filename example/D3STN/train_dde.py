@@ -417,7 +417,10 @@ class Trainer:
         )
         tgt_softmax = paddle.nn.functional.softmax(tgt[..., :1], axis=-2)
         kl_loss = paddle.nn.functional.kl_div(delay_log_softmax, tgt_softmax)
-        loss = self.criterion(preds, tgt[..., :1]) + 0.01 * kl_loss
+        loss = (
+            self.criterion(preds, tgt[..., :1])
+            + self.training_args.kl_loss_weight * kl_loss
+        )
         loss.backward()
         if self.training_args.distribute and dist.get_world_size() > 1:
             fused_allreduce_gradients([self.encoder_idx, self.decoder_idx], None)
