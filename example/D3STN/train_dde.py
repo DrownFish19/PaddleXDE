@@ -633,8 +633,8 @@ class Trainer:
 
             preds = paddle.concat(preds, axis=0)  # [B,N,T,1]
             trues = paddle.concat(tgts, axis=0)  # [B,N,T,F]
-            kl_loss = kl_loss_all / len(self.eval_dataloader)  # [M]
-            init_kl_loss = init_kl_loss_all / len(self.eval_dataloader)  # [M]
+            kl_loss = kl_loss_all / len(self.test_dataloader)  # [M]
+            init_kl_loss = init_kl_loss_all / len(self.test_dataloader)  # [M]
 
             # [B,N,T,1]
             preds = self.test_dataset.inverse_transform(preds, axis=-1).numpy()
