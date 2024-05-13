@@ -27,10 +27,11 @@
     "start_epoch": 0,
     "train_epochs": 200,
     "finetune_epochs": 100,
-    "warmup_step": 5,
+    "warmup_step": 40,
     "decay_step": 160,
     "batch_size": 16,
     "loss": "mse",
+    "kl_loss_weight": 0.0,
     "dropout": 0,
     "continue_training": 0,
     "distribute": 1
