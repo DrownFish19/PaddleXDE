@@ -415,7 +415,9 @@ class Trainer:
 
         y0_log_softmax = paddle.nn.functional.log_softmax(y0[..., :1], axis=-2)
         tgt_softmax = paddle.nn.functional.softmax(tgt[..., :1], axis=-2)
-        kl_loss = paddle.nn.functional.kl_div(y0_log_softmax, tgt_softmax)
+        kl_loss = paddle.nn.functional.kl_div(
+            y0_log_softmax, tgt_softmax, reduction="sum"
+        )
         loss = (
             self.criterion(preds, tgt[..., :1])
             + self.training_args.kl_loss_weight * kl_loss
@@ -482,7 +484,9 @@ class Trainer:
 
             y0_log_softmax = paddle.nn.functional.log_softmax(y0[..., :1], axis=-2)
             tgt_softmax = paddle.nn.functional.softmax(tgt[..., :1], axis=-2)
-            kl_loss = paddle.nn.functional.kl_div(y0_log_softmax, tgt_softmax)
+            kl_loss = paddle.nn.functional.kl_div(
+                y0_log_softmax, tgt_softmax, reduction="sum"
+            )
             loss = (
                 self.criterion(preds, tgt[..., :1])
                 + self.training_args.kl_loss_weight * kl_loss
