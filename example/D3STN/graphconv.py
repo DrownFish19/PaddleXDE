@@ -45,7 +45,7 @@ class GCN(nn.Layer):
 
         x_gcn = paddle.matmul(adj, x)
         # [N,N][B,N,in]->[B,N,in]->[B,N,out]
-        return F.relu(self.Theta(x_gcn))
+        return F.silu(self.Theta(x_gcn))
 
 
 class SpatialAttentionLayer(nn.Layer):
@@ -110,4 +110,4 @@ class SpatialAttentionGCN(nn.Layer):
 
         x_gcn = paddle.matmul(adj, x)
         # [B, N, T, D]
-        return F.relu(self.linear(x_gcn).transpose([0, 2, 1, 3]))
+        return F.silu(self.linear(x_gcn).transpose([0, 2, 1, 3]))
