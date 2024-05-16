@@ -2,7 +2,7 @@ from copy import deepcopy
 
 import paddle
 from attention import MultiHeadAttentionAwareTemporalContext
-from embedding import TemporalSectionEmbedding
+from embedding import AdaptiveEmbedding, TemporalSectionEmbedding
 from endecoder import Decoder, DecoderLayer, Encoder, EncoderLayer
 from graphconv import SpatialAttentionGCN
 from paddle import autograd, nn
@@ -28,6 +28,9 @@ class D3STN(nn.Layer):
         )
         self.temporal_section_week = TemporalSectionEmbedding(training_args, 7, axis=1)
         self.temporal_section_day = TemporalSectionEmbedding(training_args, 288, axis=2)
+        if training_args.d_adaptive > 0:
+            self.adaptive_embedding_encoder = AdaptiveEmbedding(training_args)
+            self.adaptive_embedding_decoder = AdaptiveEmbedding(training_args)
 
         attn_ss = MultiHeadAttentionAwareTemporalContext(
             args=training_args,
@@ -82,18 +85,36 @@ class D3STN(nn.Layer):
 
     def encode(self, src):
         src_dense = self.encoder_dense(src[..., :1])
+        embed_list = [src_dense]
+
         week_embedding = self.temporal_section_week(src)
         day_embedding = self.temporal_section_day(src)
-        embed = paddle.concat([src_dense, week_embedding, day_embedding], axis=-1)
+        embed_list.append(week_embedding)
+        embed_list.append(day_embedding)
+
+        if self.training_args.d_adaptive > 0:
+            adp_embedding = self.adaptive_embedding_encoder(src_dense)
+            embed_list.append(adp_embedding)
+
+        embed = paddle.concat(embed_list, axis=-1)
 
         encoder_output = self.encoder(embed)
         return encoder_output
 
     def decode(self, encoder_output, tgt):
         tgt_dense = self.decoder_dense(tgt[..., :1])
+        embed_list = [tgt_dense]
+
         week_embedding = self.temporal_section_week(tgt)
         day_embedding = self.temporal_section_day(tgt)
-        embed = paddle.concat([tgt_dense, week_embedding, day_embedding], axis=-1)
+        embed_list.append(week_embedding)
+        embed_list.append(day_embedding)
+
+        if self.training_args.d_adaptive > 0:
+            adp_embedding = self.adaptive_embedding_encoder(tgt_dense)
+            embed_list.append(adp_embedding)
+
+        embed = paddle.concat(embed_list, axis=-1)
 
         decoder_output = self.decoder(x=embed, memory=encoder_output)
         return self.generator(decoder_output)
@@ -151,76 +172,3 @@ class DecoderIndex(autograd.PyLayer):
         grad = paddle.sum(grad, axis=[0, 1, 3])
         return grad, None, None
         # return None, grad_y_lags * derivative_lags, None, None, None
-
-
-if __name__ == "__main__":
-    import os
-
-    # 将日志级别设置为6
-    os.environ["GLOG_v"] = "6"
-    import numpy as np
-    import paddle.nn as nn
-    from args import args
-    from dataset import TrafficFlowDataset
-    from paddle.io import DataLoader
-    from paddle.nn.initializer import XavierUniform
-    from utils import get_adjacency_matrix_2direction, norm_adj_matrix
-
-    from paddlexde.functional import ddeint
-    from paddlexde.solver import Euler
-
-    default_dtype = paddle.get_default_dtype()
-    adj_matrix, _ = get_adjacency_matrix_2direction(args.adj_path, 80)
-    adj_matrix = paddle.to_tensor(norm_adj_matrix(adj_matrix), default_dtype)
-
-    sc_matrix = np.load(args.sc_path)[0, :, :]
-    sc_matrix = paddle.to_tensor(norm_adj_matrix(sc_matrix), default_dtype)
-
-    nn.initializer.set_global_initializer(XavierUniform(), XavierUniform())
-    model = D3STN(args, adj_matrix, sc_matrix)
-
-    def collate_func(batch_data):
-        src_list, tgt_list = [], []
-
-        for item in batch_data:
-            if item[2]:
-                src_list.append(item[0])
-                tgt_list.append(item[1])
-
-        if len(src_list) == 0:
-            src_list.append(item[0])
-            tgt_list.append(item[1])
-
-        return paddle.stack(src_list), paddle.stack(tgt_list)
-
-    train_dataset = TrafficFlowDataset(args, "train")
-    train_dataloader = DataLoader(
-        train_dataset, batch_size=args.batch_size, collate_fn=collate_func
-    )
-    src, tgt = next(iter(train_dataloader))
-    src_index = paddle.randint(shape=[12], high=src.shape[-2], low=0)
-    src_input = paddle.index_select(src, src_index, axis=-2)
-    decoder_input = paddle.concat([src[:, :, -1:, :], tgt[:, :, :-1, :]], axis=-2)
-
-    # 1. call model foreward  (choose 1 or 2)
-    preds = model(src_index, src_input, None, decoder_input)
-    preds.backward()
-
-    # 2. call ddeint (choose 1 or 2)
-    y0 = decoder_input
-    preds = ddeint(
-        func=model,
-        y0=y0,
-        t_span=paddle.arange(args.tgt_len + 1),
-        lags=src_index,
-        his=src,
-        his_span=paddle.arange(args.his_len),
-        solver=Euler,
-    )
-    preds = preds[:, :, -args.tgt_len :, :]
-    preds.backward()
-
-    from paddleviz.paddleviz.viz import make_graph
-
-    dot = make_graph(preds, dpi="600")
-    dot.render("viz-result.gv", format="png", view=False)

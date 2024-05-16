@@ -89,3 +89,21 @@ class TemporalSectionEmbedding(nn.Layer):
         input = paddle.clip(input, min=0, max=self.embedding._num_embeddings - 1)
         input = paddle.cast(input, dtype=paddle.int32)
         return self.embedding(input)
+
+
+class AdaptiveEmbedding(nn.Layer):
+    def __init__(self, args):
+        """
+        axis=1 indicate day of week
+        axis=2 indicate hour of day
+        """
+        super(AdaptiveEmbedding, self).__init__()
+        self.args = args
+        self.embedding = paddle.create_parameter(
+            shape=[args.num_nodes, args.tgt_len, args.d_adaptive],
+            is_bias=False,
+            dtype="float32",
+        )
+
+    def forward(self, x):
+        return paddle.expand(self.embedding, shape=x.shape[:1] + self.embedding.shape)

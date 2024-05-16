@@ -11,17 +11,16 @@ import paddle.nn as nn
 import paddle.optimizer as optim
 from d3stn import D3STN, DecoderIndex
 from dataset import TrafficFlowDataset
+from metrics import MAE, MAPE, RMSE
 from paddle.distributed.fleet.utils.hybrid_parallel_util import (
     fused_allreduce_gradients,
 )
 from paddle.nn.initializer import Constant, XavierUniform
-from sklearn.metrics import mean_absolute_error, mean_squared_error
 from utils import (
     CosineAnnealingWithWarmupDecay,
     EarlyStopping,
     Logger,
     get_adjacency_matrix_2direction,
-    masked_mape_np,
     norm_adj_matrix,
 )
 from visualdl import LogWriter
@@ -39,7 +38,7 @@ class Trainer:
         self.training_args = training_args
 
         self.folder_dir = (
-            f"MAE_{training_args.model_name}_elayer{training_args.encoder_num_layers}_"
+            f"{training_args.loss}_{training_args.model_name}_elayer{training_args.encoder_num_layers}_"
             + f"dlayer{training_args.decoder_num_layers}_head{training_args.head}_dm{training_args.d_model}_"
             + f"einput{training_args.encoder_input_size}_dinput{training_args.decoder_input_size}_"
             + f"doutput{training_args.decoder_output_size}_elen{training_args.his_len}_"
@@ -209,7 +208,16 @@ class Trainer:
             total_param += np.prod(self.net.state_dict()[param_tensor].shape)
         self.logger.debug(f"Net's total params: {total_param}.")
 
-        self.criterion = nn.L1Loss()  # 定义损失函数
+        if self.training_args.loss == "mae":
+            self.criterion = nn.L1Loss()  # 定义损失函数
+        elif self.training_args.loss == "mse":
+            self.criterion = nn.MSELoss()  # 定义损失函数
+        elif self.training_args.loss == "huber":
+            self.criterion = nn.SmoothL1Loss(delta=2.0)  # 定义损失函数
+        else:
+            raise NotImplementedError(
+                f"loss {self.training_args.loss} is not supported."
+            )
 
     def _build_optim(self):
         self.lr_scheduler = CosineAnnealingWithWarmupDecay(
@@ -254,6 +262,35 @@ class Trainer:
             self.dde_solver = RK4
 
         self.logger.info(f"dde_solver: {self.dde_solver}")
+
+    def _init_finetune(self):
+        self.logger.info("Start FineTune Training")
+        self.load()
+        self.early_stopping.reset()
+
+        parameters = [
+            {
+                "params": self.net.parameters(),
+                "learning_rate": self.training_args.learning_rate * 0.0,
+            },
+            {
+                "params": [self.decoder_idx],
+                "learning_rate": self.training_args.learning_rate,
+            },
+            {
+                "params": [self.encoder_idx],
+                "learning_rate": self.training_args.learning_rate,
+            },
+        ]
+
+        # 定义优化器，传入所有网络参数
+        self.optimizer = optim.Adam(
+            parameters=parameters,
+            learning_rate=1.0,
+            weight_decay=float(self.training_args.weight_decay),
+            multi_precision=True,
+        )
+        self.finetune = True
 
     def save(self, epoch=None):
         if dist.get_rank() != 0:
@@ -352,36 +389,6 @@ class Trainer:
         self.load()
         self.compute_test_loss(epoch)
 
-    def _init_finetune(self):
-        self.logger.info("Start FineTune Training")
-        self.load()
-
-        self.early_stopping.reset()
-
-        parameters = [
-            {
-                "params": self.net.parameters(),
-                "learning_rate": self.training_args.learning_rate * 0.1,
-            },
-            {
-                "params": [self.decoder_idx],
-                "learning_rate": self.training_args.learning_rate,
-            },
-            {
-                "params": [self.encoder_idx],
-                "learning_rate": self.training_args.learning_rate,
-            },
-        ]
-
-        # 定义优化器，传入所有网络参数
-        self.optimizer = optim.Adam(
-            parameters=parameters,
-            learning_rate=1.0,
-            weight_decay=float(self.training_args.weight_decay),
-            multi_precision=True,
-        )
-        self.finetune = True
-
     def train_one_step(self, src, tgt):
         """_summary_
 
@@ -400,7 +407,7 @@ class Trainer:
             his_span=paddle.arange(self.training_args.his_len),
         )
 
-        preds, encoder_input = ddeint(
+        preds, delay = ddeint(
             func=self.net,
             y0=y0,
             t_span=paddle.arange(1 + 1),
@@ -413,18 +420,20 @@ class Trainer:
         pred_len = y0.shape[-2]
         preds = preds[:, :, -pred_len:, :1]
 
-        y0_log_softmax = paddle.nn.functional.log_softmax(y0[..., :1], axis=-2)
+        delay_log_softmax = paddle.nn.functional.log_softmax(delay[..., :1], axis=-2)
         tgt_softmax = paddle.nn.functional.softmax(tgt[..., :1], axis=-2)
         kl_loss = paddle.nn.functional.kl_div(
-            y0_log_softmax, tgt_softmax, reduction="sum"
+            delay_log_softmax, tgt_softmax, reduction="sum"
         )
         loss = (
             self.criterion(preds, tgt[..., :1])
             + self.training_args.kl_loss_weight * kl_loss
         )
+
         loss.backward()
         if self.training_args.distribute and dist.get_world_size() > 1:
             fused_allreduce_gradients([self.encoder_idx, self.decoder_idx], None)
+
         self.optimizer.step()
         self.optimizer.clear_grad()
 
@@ -468,7 +477,7 @@ class Trainer:
 
         with dist_no_sync():
             encoder_output = encoder_func(encoder_input)
-            preds, _ = ddeint(
+            preds, delay = ddeint(
                 func=decoder_func,
                 y0=y0,
                 t_span=paddle.arange(1 + 1),
@@ -482,21 +491,25 @@ class Trainer:
             pred_len = y0.shape[-2]
             preds = preds[:, :, -pred_len:, :1]
 
-            y0_log_softmax = paddle.nn.functional.log_softmax(y0[..., :1], axis=-2)
+            delay_log_softmax = paddle.nn.functional.log_softmax(
+                delay[..., :1], axis=-2
+            )
             tgt_softmax = paddle.nn.functional.softmax(tgt[..., :1], axis=-2)
             kl_loss = paddle.nn.functional.kl_div(
-                y0_log_softmax, tgt_softmax, reduction="sum"
+                delay_log_softmax, tgt_softmax, reduction="sum"
             )
             loss = (
                 self.criterion(preds, tgt[..., :1])
                 + self.training_args.kl_loss_weight * kl_loss
             )
+
             loss.backward()
 
         if self.training_args.distribute and dist.get_world_size() > 1:
             fused_allreduce_gradients(
                 list(self.net.parameters()) + [self.encoder_idx, self.decoder_idx], None
             )
+
         self.optimizer.step()
         self.optimizer.clear_grad()
 
@@ -626,9 +639,9 @@ class Trainer:
             trues = paddle.concat(tgts, axis=0)  # [B,N,T,F]
 
             # [B,N,T,1]
-            preds = self.test_dataset.inverse_transform(preds, axis=-1).numpy()
+            preds = self.test_dataset.inverse_transform(preds).numpy()
             # [B,N,T,1]
-            trues = self.test_dataset.inverse_transform(trues, axis=-1).numpy()
+            trues = self.test_dataset.inverse_transform(trues).numpy()
 
             if dist.get_world_size() > 1:
                 all_preds = []
@@ -666,18 +679,18 @@ class Trainer:
 
             for i in range(prediction_length):
                 assert preds.shape[0] == trues.shape[0]
-                mae = mean_absolute_error(trues[:, :, i, 0], preds[:, :, i, 0])
-                rmse = mean_squared_error(trues[:, :, i, 0], preds[:, :, i, 0]) ** 0.5
-                mape = masked_mape_np(trues[:, :, i, 0], preds[:, :, i, 0], 0)
+                mae = MAE(trues[:, :, i, 0], preds[:, :, i, 0])
+                rmse = RMSE(trues[:, :, i, 0], preds[:, :, i, 0])
+                mape = MAPE(trues[:, :, i, 0], preds[:, :, i, 0], 0.9)
                 self.logger.info(f"{i} MAE: {mae}")
                 self.logger.info(f"{i} RMSE: {rmse}")
                 self.logger.info(f"{i} MAPE: {mape}")
                 excel_list.extend([mae, rmse, mape])
 
             # print overall results
-            mae = mean_absolute_error(trues.reshape(-1, 1), preds.reshape(-1, 1))
-            rmse = mean_squared_error(trues.reshape(-1, 1), preds.reshape(-1, 1)) ** 0.5
-            mape = masked_mape_np(trues.reshape(-1, 1), preds.reshape(-1, 1), 0)
+            mae = MAE(trues.reshape(-1, 1), preds.reshape(-1, 1))
+            rmse = RMSE(trues.reshape(-1, 1), preds.reshape(-1, 1))
+            mape = MAPE(trues.reshape(-1, 1), preds.reshape(-1, 1), 0.9)
             self.logger.info(f"all MAE: {mae}")
             self.logger.info(f"all RMSE: {rmse}")
             self.logger.info(f"all MAPE: {mape}")
