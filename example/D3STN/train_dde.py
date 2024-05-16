@@ -8,6 +8,7 @@ import paddle
 import paddle.distributed as dist
 import paddle.io as io
 import paddle.nn as nn
+import paddle.nn.functional as F
 import paddle.optimizer as optim
 from d3stn import D3STN, DecoderIndex
 from dataset import TrafficFlowDataset
@@ -268,10 +269,17 @@ class Trainer:
         self.load()
         self.early_stopping.reset()
 
+        self.lr_scheduler = CosineAnnealingWithWarmupDecay(
+            max_lr=1,
+            min_lr=0.1,
+            warmup_step=self.training_args.warmup_step,
+            decay_step=self.training_args.decay_step,
+        )
+
         parameters = [
             {
                 "params": self.net.parameters(),
-                "learning_rate": self.training_args.learning_rate * 0.0,
+                "learning_rate": 0.0,
             },
             {
                 "params": [self.decoder_idx],
@@ -286,7 +294,7 @@ class Trainer:
         # 定义优化器，传入所有网络参数
         self.optimizer = optim.Adam(
             parameters=parameters,
-            learning_rate=1.0,
+            learning_rate=self.lr_scheduler,
             weight_decay=float(self.training_args.weight_decay),
             multi_precision=True,
         )
@@ -341,12 +349,12 @@ class Trainer:
             if epoch == self.training_args.train_epochs:
                 self.compute_test_loss(epoch)
                 self._init_finetune()
-                self.train_func = self.finetune_one_step
+                # self.train_func = self.finetune_one_step
 
             self.net.train()  # ensure dropout layers are in train mode
             tr_s_time = time()
             epoch_step = 0
-            self.lr_scheduler.step()
+            self.lr_scheduler.step(epoch + 1)
             for batch_index, batch_data in enumerate(self.train_dataloader):
                 src, tgt = batch_data
                 src = paddle.cast(src, paddle.get_default_dtype())
@@ -419,16 +427,19 @@ class Trainer:
         )
         pred_len = y0.shape[-2]
         preds = preds[:, :, -pred_len:, :1]
+        loss = self.criterion(preds, tgt[..., :1])
 
-        delay_log_softmax = paddle.nn.functional.log_softmax(delay[..., :1], axis=-2)
-        tgt_softmax = paddle.nn.functional.softmax(tgt[..., :1], axis=-2)
-        kl_loss = paddle.nn.functional.kl_div(
-            delay_log_softmax, tgt_softmax, reduction="sum"
-        )
-        loss = (
-            self.criterion(preds, tgt[..., :1])
-            + self.training_args.kl_loss_weight * kl_loss
-        )
+        align_loss = 0.0
+        tgt_softmax = F.softmax(tgt[..., :1], axis=-2)
+        # y0_log_softmax = F.log_softmax(y0[..., :1], axis=-2)
+        # y0_kl_loss = F.kl_div(y0_log_softmax, tgt_softmax, reduction="sum")
+        # align_loss += y0_kl_loss
+
+        delay_log_softmax = F.log_softmax(delay[..., :1], axis=-2)
+        delay_kl_loss = F.kl_div(delay_log_softmax, tgt_softmax, reduction="sum")
+        align_loss += delay_kl_loss
+
+        loss += self.training_args.kl_loss_weight * align_loss
 
         loss.backward()
         if self.training_args.distribute and dist.get_world_size() > 1:
@@ -437,7 +448,7 @@ class Trainer:
         self.optimizer.step()
         self.optimizer.clear_grad()
 
-        return preds, loss, kl_loss
+        return preds, loss, align_loss
 
     def finetune_one_step(self, src, tgt):
         """_summary_
@@ -522,35 +533,19 @@ class Trainer:
             his=src,
             his_span=paddle.arange(self.training_args.his_len),
         )
-        encoder_input = HistoryIndex.apply(
+
+        preds, _ = ddeint(
+            func=self.net,
+            y0=y0,
+            t_span=paddle.arange(1 + 1),
             lags=self.encoder_idx,
             his=src,
             his_span=paddle.arange(self.training_args.his_len),
-        )
-
-        if self.training_args.distribute and dist.get_world_size() > 1:
-            encoder_func = self.net._layers.encode
-            decoder_func = self.net._layers.decode
-        else:
-            encoder_func = self.net.encode
-            decoder_func = self.net.decode
-
-        encoder_output = encoder_func(encoder_input)
-
-        preds, _ = ddeint(
-            func=decoder_func,
-            y0=y0,
-            t_span=paddle.arange(1 + 1),
-            lags=None,
-            his=encoder_output,
-            his_span=None,
             solver=self.dde_solver,
-            his_processed=True,
             fixed_solver_interp="",
         )
         pred_len = y0.shape[-2]
         preds = preds[:, :, -pred_len:, :1]
-
         loss = self.criterion(preds, tgt[..., :1])
 
         return preds, loss
@@ -562,35 +557,19 @@ class Trainer:
             his=src,
             his_span=paddle.arange(self.training_args.his_len),
         )
-        encoder_input = HistoryIndex.apply(
+
+        preds, _ = ddeint(
+            func=self.net,
+            y0=y0,
+            t_span=paddle.arange(1 + 1),
             lags=self.encoder_idx,
             his=src,
             his_span=paddle.arange(self.training_args.his_len),
-        )
-
-        if self.training_args.distribute and dist.get_world_size() > 1:
-            encoder_func = self.net._layers.encode
-            decoder_func = self.net._layers.decode
-        else:
-            encoder_func = self.net.encode
-            decoder_func = self.net.decode
-
-        encoder_output = encoder_func(encoder_input)
-
-        preds, _ = ddeint(
-            func=decoder_func,
-            y0=y0,
-            t_span=paddle.arange(1 + 1),
-            lags=None,
-            his=encoder_output,
-            his_span=None,
             solver=self.dde_solver,
-            his_processed=True,
             fixed_solver_interp="",
         )
         pred_len = y0.shape[-2]
         preds = preds[:, :, -pred_len:, :1]
-
         loss = self.criterion(preds, tgt[..., :1])
 
         return preds, loss
