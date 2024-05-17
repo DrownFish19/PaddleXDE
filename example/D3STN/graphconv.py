@@ -17,9 +17,15 @@ class GCN(nn.Layer):
             bias_attr=False,
         )
         self.alpha = paddle.create_parameter(
-            shape=[1], dtype=paddle.get_default_dtype()
+            shape=[1],
+            dtype=paddle.get_default_dtype(),
+            default_initializer=paddle.nn.initializer.Constant(value=0.0),
         )
-        self.beta = paddle.create_parameter(shape=[1], dtype=paddle.get_default_dtype())
+        self.beta = paddle.create_parameter(
+            shape=[1],
+            dtype=paddle.get_default_dtype(),
+            default_initializer=paddle.nn.initializer.Constant(value=1.0),
+        )
 
     def forward(self, x):
         """
@@ -80,9 +86,15 @@ class SpatialAttentionGCN(nn.Layer):
         self.is_scale = is_scale
         self.SAt = SpatialAttentionLayer(dropout=args.dropout)
         self.alpha = paddle.create_parameter(
-            shape=[1], dtype=paddle.get_default_dtype()
+            shape=[1],
+            dtype=paddle.get_default_dtype(),
+            default_initializer=paddle.nn.initializer.Constant(value=0.0),
         )
-        self.beta = paddle.create_parameter(shape=[1], dtype=paddle.get_default_dtype())
+        self.beta = paddle.create_parameter(
+            shape=[1],
+            dtype=paddle.get_default_dtype(),
+            default_initializer=paddle.nn.initializer.Constant(value=1.0),
+        )
 
     def forward(self, x):
         """

@@ -64,8 +64,7 @@ class ScalerMinMax(object):
         self.min = 0.0
         self.max = 1.0
 
-    def fit(self, data):
-        # type: (paddle.tensor) -> None
+    def fit(self, data, axis=None):
         """
         Desc:
             Fit the data
@@ -74,11 +73,16 @@ class ScalerMinMax(object):
         Returns:
             None
         """
-        self.min = np.min(data)
-        self.max = np.max(data)
+        self.min = (
+            np.min(data) if axis is None else np.min(data, axis=axis, keepdims=True)
+        )
+        self.min = self.min * 0.0  # min must be zero
+
+        self.max = (
+            np.max(data) if axis is None else np.max(data, axis=axis, keepdims=True)
+        )
 
     def transform(self, data):
-        # type: (paddle.tensor) -> paddle.tensor
         """
         Desc:
             Transform the data
@@ -93,7 +97,6 @@ class ScalerMinMax(object):
         return 2.0 * data - 1.0
 
     def inverse_transform(self, data):
-        # type: (paddle.tensor, None) -> paddle.tensor
         """
         Desc:
             Restore to the original data
@@ -143,13 +146,12 @@ class TrafficFlowDataset(Dataset):
         self.data_type = data_type
 
         # Scaler
+        # [N, T, D]
         if training_args.scale:
             self.scaler = ScalerMinMax()
-            train_data = origin_data[: self.train_size, :, :]
-            self.scaler.fit(train_data.reshape(-1, train_data.shape[-1]))
-            self.data = self.scaler.transform(origin_data).reshape(
-                self.num_nodes, self.seq_len, self.dims
-            )
+            train_data = origin_data[:, : self.train_size, :]
+            self.scaler.fit(train_data, axis=1)
+            self.data = self.scaler.transform(origin_data)
         else:
             self.data = origin_data
 
@@ -164,11 +166,7 @@ class TrafficFlowDataset(Dataset):
         )
 
         if self.data_type == "train":
-            data_len = (
-                self.train_size
-                - self.training_args.his_len
-                - self.training_args.tgt_len
-            )
+            data_len = self.train_size - self.training_args.tgt_len
         elif self.data_type == "val":
             data_len = self.val_size - self.training_args.tgt_len
         else:

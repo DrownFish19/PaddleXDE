@@ -15,7 +15,7 @@ import numpy as np
 def MSE(y_true, y_pred):
     with np.errstate(divide="ignore", invalid="ignore"):
         # std scaler inverse_transform maybe change 0 to 0.0001
-        mask = np.greater_equal(y_true, 0.1)
+        mask = np.greater_equal(y_true, 0.9)
         mask = mask.astype(np.float32)
         mask /= np.mean(mask)
         mse = np.square(np.subtract(y_pred, y_true))
@@ -27,7 +27,7 @@ def MSE(y_true, y_pred):
 def RMSE(y_true, y_pred):
     with np.errstate(divide="ignore", invalid="ignore"):
         # std scaler inverse_transform maybe change 0 to 0.0001
-        mask = np.greater_equal(y_true, 0.1)
+        mask = np.greater_equal(y_true, 0.9)
         mask = mask.astype(np.float32)
         mask /= np.mean(mask)
         rmse = np.square(np.abs(np.subtract(y_pred, y_true)))
@@ -39,7 +39,7 @@ def RMSE(y_true, y_pred):
 def MAE(y_true, y_pred):
     with np.errstate(divide="ignore", invalid="ignore"):
         # std scaler inverse_transform maybe change 0 to 0.0001
-        mask = np.greater_equal(y_true, 0.1)
+        mask = np.greater_equal(y_true, 0.9)
         mask = mask.astype(np.float32)
         mask /= np.mean(mask)
         mae = np.abs(np.subtract(y_pred, y_true))
