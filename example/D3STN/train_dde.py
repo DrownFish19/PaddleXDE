@@ -439,6 +439,10 @@ class Trainer:
         delay_kl_loss = F.kl_div(delay_log_softmax, tgt_softmax)
         align_loss += delay_kl_loss
 
+        preds_log_softmax = F.log_softmax(preds, axis=-2)
+        preds_kl_loss = F.kl_div(preds_log_softmax, tgt_softmax)
+        align_loss += preds_kl_loss
+
         loss += self.training_args.kl_loss_weight * align_loss
 
         loss.backward()
