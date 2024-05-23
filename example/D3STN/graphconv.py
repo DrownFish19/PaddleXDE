@@ -19,12 +19,12 @@ class GCN(nn.Layer):
         self.alpha = paddle.create_parameter(
             shape=[1],
             dtype=paddle.get_default_dtype(),
-            default_initializer=paddle.nn.initializer.Constant(value=0.0),
+            default_initializer=paddle.nn.initializer.Constant(value=0.5),
         )
         self.beta = paddle.create_parameter(
             shape=[1],
             dtype=paddle.get_default_dtype(),
-            default_initializer=paddle.nn.initializer.Constant(value=0.0),
+            default_initializer=paddle.nn.initializer.Constant(value=0.5),
         )
 
     def forward(self, x):
@@ -88,12 +88,12 @@ class SpatialAttentionGCN(nn.Layer):
         self.alpha = paddle.create_parameter(
             shape=[1],
             dtype=paddle.get_default_dtype(),
-            default_initializer=paddle.nn.initializer.Constant(value=0.0),
+            default_initializer=paddle.nn.initializer.Constant(value=0.5),
         )
         self.beta = paddle.create_parameter(
             shape=[1],
             dtype=paddle.get_default_dtype(),
-            default_initializer=paddle.nn.initializer.Constant(value=0.0),
+            default_initializer=paddle.nn.initializer.Constant(value=0.5),
         )
 
     def forward(self, x):
