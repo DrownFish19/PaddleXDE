@@ -14,6 +14,7 @@
     "d_model": 128,
     "d_proj": 80,
     "d_sect": 24,
+    "d_adaptive": 0,
     "attention": "Corr",
     "head": 8,
     "kernel_size": 3,
@@ -30,7 +31,8 @@
     "warmup_step": 40,
     "decay_step": 160,
     "batch_size": 16,
-    "loss": "mse",
+    "loss": "mae",
+    "kl_loss_weight": 0.001,
     "dropout": 0,
     "continue_training": 0,
     "distribute": 1
