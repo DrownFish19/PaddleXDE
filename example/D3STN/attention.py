@@ -121,7 +121,8 @@ class MultiHeadAttentionAwareTemporalContext(nn.Layer):
             args.d_model,
             args.d_model,
             (1, args.kernel_size),
-            padding=(0, self.padding_1DConv),
+            padding=self.padding_1DConv,
+            padding_mode="zeros",
             bias_attr=True,
             data_format="NHWC",
         )
@@ -130,7 +131,8 @@ class MultiHeadAttentionAwareTemporalContext(nn.Layer):
             args.d_model,
             args.d_model,
             (1, args.kernel_size),
-            padding=(0, self.padding_causal),
+            padding=self.padding_causal,
+            padding_mode="zeros",
             bias_attr=True,
             data_format="NHWC",
         )
@@ -204,10 +206,22 @@ class MultiHeadAttentionAwareTemporalContext(nn.Layer):
         value = self.value_conv(value)  # B, N, T, D
 
         if self.query_conv_type == "causal":
-            query = query[:, :, : -self.padding_causal, :]
+            query = query[
+                :, self.padding_causal : -self.padding_causal, : -self.padding_causal, :
+            ]
+        else:
+            query = query[:, self.padding_1DConv : -self.padding_1DConv, :, :]
+
         if self.key_conv_type == "causal":
-            key = key[:, :, : -self.padding_causal, :]
-            value = value[:, :, : -self.padding_causal, :]
+            key = key[
+                :, self.padding_causal : -self.padding_causal, : -self.padding_causal, :
+            ]
+            value = value[
+                :, self.padding_causal : -self.padding_causal, : -self.padding_causal, :
+            ]
+        else:
+            key = key[:, self.padding_1DConv : -self.padding_1DConv, :, :]
+            value = value[:, self.padding_1DConv : -self.padding_1DConv, :, :]
 
         if self.attention_type == "Corr":
             axis_b = paddle.arange(B)[:, None, None, None, None]
@@ -238,4 +252,5 @@ class MultiHeadAttentionAwareTemporalContext(nn.Layer):
 
         # [B,N,T,D]
         x = x.transpose(perm).reshape([B, N, -1, self.heads * self.head_dim])
-        return self.out_conv(x)
+
+        return self.out_conv(x)[:, self.padding_1DConv : -self.padding_1DConv, :, :]

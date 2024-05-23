@@ -44,4 +44,4 @@ def ddeint(
     )
     solution = s.integrate(t_span)
 
-    return solution
+    return solution, xde.y_lags

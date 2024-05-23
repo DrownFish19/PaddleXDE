@@ -8,6 +8,7 @@ import paddle.nn.functional as F
 class GCN(nn.Layer):
     def __init__(self, training_args, d_model, norm_adj_matrix, norm_sc_matrix):
         super(GCN, self).__init__()
+        self.args = training_args
         self.norm_adj_matrix = norm_adj_matrix
         self.norm_sc_matrix = norm_sc_matrix
         self.Theta = nn.Linear(
@@ -18,11 +19,13 @@ class GCN(nn.Layer):
         self.alpha = paddle.create_parameter(
             shape=[1],
             dtype=paddle.get_default_dtype(),
+            default_initializer=paddle.nn.initializer.Constant(value=0.5),
         )
-        if training_args.no_adj:
-            self.alpha.set_value(paddle.to_tensor([0.0]))
-            self.alpha.stop_gradient = True
-        self.beta = paddle.create_parameter(shape=[1], dtype=paddle.get_default_dtype())
+        self.beta = paddle.create_parameter(
+            shape=[1],
+            dtype=paddle.get_default_dtype(),
+            default_initializer=paddle.nn.initializer.Constant(value=0.5),
+        )
 
     def forward(self, x):
         """
@@ -34,9 +37,21 @@ class GCN(nn.Layer):
             self.alpha * self.norm_adj_matrix,
             self.beta * self.norm_sc_matrix,
         )
+
+        if self.args.with_adj and not self.args.with_sc:
+            adj = self.alpha * self.norm_adj_matrix
+        elif not self.args.with_adj and self.args.with_sc:
+            adj = self.beta * self.norm_sc_matrix
+        elif self.args.with_adj and self.args.with_sc:
+            adj = paddle.add(
+                self.alpha * self.norm_adj_matrix, self.beta * self.norm_sc_matrix
+            )
+        else:
+            adj = self.alpha * self.norm_adj_matrix
+
         x_gcn = paddle.matmul(adj, x)
         # [N,N][B,N,in]->[B,N,in]->[B,N,out]
-        return F.relu(self.Theta(x_gcn))
+        return F.silu(self.Theta(x_gcn))
 
 
 class SpatialAttentionLayer(nn.Layer):
@@ -71,12 +86,15 @@ class SpatialAttentionGCN(nn.Layer):
         self.is_scale = is_scale
         self.SAt = SpatialAttentionLayer(dropout=args.dropout)
         self.alpha = paddle.create_parameter(
-            shape=[1], dtype=paddle.get_default_dtype()
+            shape=[1],
+            dtype=paddle.get_default_dtype(),
+            default_initializer=paddle.nn.initializer.Constant(value=0.5),
         )
-        if args.no_adj:
-            self.alpha.set_value(paddle.to_tensor([0.0]))
-            self.alpha.stop_gradient = True
-        self.beta = paddle.create_parameter(shape=[1], dtype=paddle.get_default_dtype())
+        self.beta = paddle.create_parameter(
+            shape=[1],
+            dtype=paddle.get_default_dtype(),
+            default_initializer=paddle.nn.initializer.Constant(value=0.5),
+        )
 
     def forward(self, x):
         """
@@ -90,10 +108,18 @@ class SpatialAttentionGCN(nn.Layer):
             spatial_attention = spatial_attention / math.sqrt(self.args.d_model)
         x = x.transpose([0, 2, 1, 3])  # [B,T,N,D]
 
-        adj = paddle.add(
-            self.alpha * paddle.multiply(spatial_attention, self.norm_adj),
-            self.beta * paddle.multiply(spatial_attention, self.norm_sc),
-        )
+        if self.args.with_adj and not self.args.with_sc:
+            adj = self.alpha * paddle.multiply(spatial_attention, self.norm_adj)
+        elif not self.args.with_adj and self.args.with_sc:
+            adj = self.beta * paddle.multiply(spatial_attention, self.norm_sc)
+        elif self.args.with_adj and self.args.with_sc:
+            adj = paddle.add(
+                self.alpha * paddle.multiply(spatial_attention, self.norm_adj),
+                self.beta * paddle.multiply(spatial_attention, self.norm_sc),
+            )
+        else:
+            adj = self.alpha * paddle.multiply(spatial_attention, self.norm_adj)
+
         x_gcn = paddle.matmul(adj, x)
         # [B, N, T, D]
-        return F.relu(self.linear(x_gcn).transpose([0, 2, 1, 3]))
+        return F.silu(self.linear(x_gcn).transpose([0, 2, 1, 3]))

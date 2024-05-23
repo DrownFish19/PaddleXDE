@@ -4,7 +4,6 @@
     // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
-
         {
             "name": "current",
             "type": "python",
@@ -71,18 +70,41 @@
             }
         },
         {
-            "name": "example_CorrSTN_ddeint",
+            "name": "example_D3STN",
             "type": "python",
             "request": "launch",
-            "program": "${workspaceFolder}/example/CorrSTN/train_dde.py",
+            "program": "${workspaceFolder}/example/D3STN/train.py",
             "console": "integratedTerminal",
             "justMyCode": false,
-            "args": [],
+            "cwd": "${workspaceFolder}/example/D3STN",
+            "args": [
+                "--config_json",
+                "configs/HZME_OUTFLOW.json"
+            ],
             "env": {
                 "CUDA_VISIBLE_DEVICES": "0",
                 "PYTHONPATH": "${workspaceFolder}",
             }
         },
-
+        {
+            "name": "example_D3STN_parallel",
+            "type": "python",
+            "request": "launch",
+            "program": "/usr/local/lib/python3.10/dist-packages/paddle/distributed/launch/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "cwd": "${workspaceFolder}/example/D3STN",
+            "args": [
+                "--gpus",
+                "0,1,2,3,4,5,6,7",
+                "${workspaceFolder}/example/D3STN/train.py",
+                "--config_json",
+                "configs/HZME_OUTFLOW.json"
+            ],
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0,1,2,3,4,5,6,7",
+                "PYTHONPATH": "${workspaceFolder}",
+            }
+        },
     ]
 }

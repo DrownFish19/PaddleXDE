@@ -137,3 +137,5 @@ FETCH_HEAD
 
 # experiments
 experiments/*
+TrafficFlowData/*
+log/*

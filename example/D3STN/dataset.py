@@ -1,6 +1,6 @@
 import numpy as np
 import paddle
-from paddle.io import DataLoader, Dataset
+from paddle.io import Dataset
 
 
 class ScalerStd(object):
@@ -22,8 +22,8 @@ class ScalerStd(object):
         Returns:
             None
         """
-        self.mean = np.mean(data, axis=0)
-        self.std = np.std(data, axis=0)
+        self.mean = np.mean(data)
+        self.std = np.std(data)
 
     def transform(self, data):
         # type: (paddle.tensor) -> paddle.tensor
@@ -35,16 +35,8 @@ class ScalerStd(object):
         Returns:
             The transformed data
         """
-        mean = (
-            paddle.tensor(self.mean).type_as(data).to(data.device)
-            if paddle.is_tensor(data)
-            else self.mean
-        )
-        std = (
-            paddle.tensor(self.std).type_as(data).to(data.device)
-            if paddle.is_tensor(data)
-            else self.std
-        )
+        mean = paddle.to_tensor(self.mean) if paddle.is_tensor(data) else self.mean
+        std = paddle.to_tensor(self.std) if paddle.is_tensor(data) else self.std
         return (data - mean) / std
 
     def inverse_transform(self, data):
@@ -58,8 +50,8 @@ class ScalerStd(object):
             The original data
         """
 
-        mean = paddle.tensor(self.mean) if paddle.is_tensor(data) else self.mean
-        std = paddle.tensor(self.std) if paddle.is_tensor(data) else self.std
+        mean = paddle.to_tensor(self.mean) if paddle.is_tensor(data) else self.mean
+        std = paddle.to_tensor(self.std) if paddle.is_tensor(data) else self.std
         return (data * std) + mean
 
 
@@ -72,8 +64,7 @@ class ScalerMinMax(object):
         self.min = 0.0
         self.max = 1.0
 
-    def fit(self, data):
-        # type: (paddle.tensor) -> None
+    def fit(self, data, axis=None):
         """
         Desc:
             Fit the data
@@ -82,11 +73,16 @@ class ScalerMinMax(object):
         Returns:
             None
         """
-        self.min = np.min(data, axis=0)
-        self.max = np.max(data, axis=0)
+        self.min = (
+            np.min(data) if axis is None else np.min(data, axis=axis, keepdims=True)
+        )
+        self.min = self.min * 0.0  # min must be zero
+
+        self.max = (
+            np.max(data) if axis is None else np.max(data, axis=axis, keepdims=True)
+        )
 
     def transform(self, data):
-        # type: (paddle.tensor) -> paddle.tensor
         """
         Desc:
             Transform the data
@@ -100,8 +96,7 @@ class ScalerMinMax(object):
         data = 1.0 * (data - _min) / (_max - _min)
         return 2.0 * data - 1.0
 
-    def inverse_transform(self, data, axis=None):
-        # type: (paddle.tensor, None) -> paddle.tensor
+    def inverse_transform(self, data):
         """
         Desc:
             Restore to the original data
@@ -114,11 +109,7 @@ class ScalerMinMax(object):
         _min = paddle.to_tensor(self.min) if paddle.is_tensor(data) else self.min
         _max = paddle.to_tensor(self.max) if paddle.is_tensor(data) else self.max
         data = (data + 1.0) / 2.0
-
-        if axis is None:
-            return 1.0 * data * (_max[axis] - _min[axis]) + _min[axis]
-        else:
-            return 1.0 * data * (_max[axis] - _min[axis]) + _min[axis]
+        return 1.0 * data * (_max - _min) + _min
 
 
 class TrafficFlowDataset(Dataset):
@@ -155,13 +146,12 @@ class TrafficFlowDataset(Dataset):
         self.data_type = data_type
 
         # Scaler
+        # [N, T, D]
         if training_args.scale:
             self.scaler = ScalerMinMax()
-            train_data = origin_data[: self.train_size, :, :]
-            self.scaler.fit(train_data.reshape(-1, train_data.shape[-1]))
-            self.data = self.scaler.transform(origin_data).reshape(
-                self.num_nodes, self.seq_len, self.dims
-            )
+            train_data = origin_data[:, : self.train_size, :]
+            self.scaler.fit(train_data, axis=1)
+            self.data = self.scaler.transform(origin_data)
         else:
             self.data = origin_data
 
@@ -176,11 +166,7 @@ class TrafficFlowDataset(Dataset):
         )
 
         if self.data_type == "train":
-            data_len = (
-                self.train_size
-                - self.training_args.his_len
-                - self.training_args.tgt_len
-            )
+            data_len = self.train_size - self.training_args.tgt_len
         elif self.data_type == "val":
             data_len = self.val_size - self.training_args.tgt_len
         else:
@@ -222,44 +208,8 @@ class TrafficFlowDataset(Dataset):
     def __len__(self):
         return len(self.his_pair)
 
-    def inverse_transform(self, data, axis=None):
+    def inverse_transform(self, data):
         if self.training_args.scale:
-            return self.scaler.inverse_transform(data, axis)
+            return self.scaler.inverse_transform(data)
         else:
             return data
-
-
-if __name__ == "__main__":
-    from args import args
-
-    train_dataset = TrafficFlowDataset(args, "train")
-    val_dataset = TrafficFlowDataset(args, "val")
-    test_dataset = TrafficFlowDataset(args, "test")
-
-    traing_dataloader = DataLoader(
-        train_dataset,
-        batch_size=10,
-        shuffle=False,
-        num_workers=4,
-    )
-    val_dataloader = DataLoader(
-        val_dataset,
-        batch_size=10,
-        shuffle=False,
-        num_workers=4,
-    )
-    test_dataloader = DataLoader(
-        test_dataset,
-        batch_size=10,
-        shuffle=False,
-        num_workers=4,
-    )
-
-    for item in traing_dataloader:
-        print(item[0].shape, item[1].shape)
-
-    # for item in val_dataloader:
-    #     print(item[0].shape, item[1].shape)
-
-    # for item in test_dataloader:
-    #     print(item[0].shape, item[1].shape)

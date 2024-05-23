@@ -5,46 +5,45 @@ from time import time
 import args
 import numpy as np
 import paddle
+import paddle.distributed as dist
+import paddle.io as io
 import paddle.nn as nn
+import paddle.nn.functional as F
 import paddle.optimizer as optim
-from corrstn import CorrSTN, DecoderIndex
+from d3stn import D3STN, DecoderIndex
 from dataset import TrafficFlowDataset
-from paddle.distributed import fleet
-from paddle.io import DataLoader, DistributedBatchSampler
+from metrics import MAE, MAPE, RMSE
+from paddle.distributed.fleet.utils.hybrid_parallel_util import (
+    fused_allreduce_gradients,
+)
 from paddle.nn.initializer import Constant, XavierUniform
-from sklearn.metrics import mean_absolute_error, mean_squared_error
 from utils import (
     CosineAnnealingWithWarmupDecay,
     EarlyStopping,
     Logger,
     get_adjacency_matrix_2direction,
-    masked_mape_np,
     norm_adj_matrix,
 )
 from visualdl import LogWriter
 
 from paddlexde.functional import ddeint
 from paddlexde.solver.fixed_solver import RK4, Euler, Midpoint
+from paddlexde.version import commit
 from paddlexde.xde.base_dde import HistoryIndex
-
-
-def amp_guard_context(fp16=False):
-    if fp16:
-        return paddle.amp.auto_cast(level="O2")
-    else:
-        return contextlib.nullcontext()
 
 
 class Trainer:
     def __init__(self, training_args):
+        dist.init_parallel_env()
 
         self.training_args = training_args
 
         self.folder_dir = (
-            f"MAE_{training_args.model_name}_elayer{training_args.encoder_num_layers}_"
+            f"{training_args.loss}_{training_args.model_name}_elayer{training_args.encoder_num_layers}_"
             + f"dlayer{training_args.decoder_num_layers}_head{training_args.head}_dm{training_args.d_model}_"
             + f"einput{training_args.encoder_input_size}_dinput{training_args.decoder_input_size}_"
-            + f"doutput{training_args.decoder_output_size}_drop{training_args.dropout}_"
+            + f"doutput{training_args.decoder_output_size}_elen{training_args.his_len}_"
+            + f"dlen{training_args.tgt_len}_drop{training_args.dropout}_"
             + f"lr{training_args.learning_rate}_wd{training_args.weight_decay}_bs{training_args.batch_size}_"
             + f"topk{training_args.top_k}_att{training_args.attention}_trepoch{training_args.train_epochs}_"
             + f"finepoch{training_args.finetune_epochs}_dde"
@@ -53,8 +52,13 @@ class Trainer:
         self.save_path = os.path.join(
             "experiments", training_args.dataset_name, self.folder_dir
         )
-        os.makedirs(self.save_path, exist_ok=True)
-        self.logger = Logger("CorrSTN", os.path.join(self.save_path, "log.txt"))
+
+        if dist.get_rank() == 0:
+            os.makedirs(self.save_path, exist_ok=True)
+            self.writer = LogWriter(logdir=os.path.join(self.save_path, "visualdl"))
+        if dist.get_world_size() > 1:
+            dist.barrier()
+        self.logger = Logger("D3STN", os.path.join(self.save_path, "log.txt"))
         self.writer = LogWriter(logdir=os.path.join(self.save_path, "visualdl"))
 
         if training_args.start_epoch == 0:
@@ -62,6 +66,7 @@ class Trainer:
         elif training_args.start_epoch > 0:
             self.logger.info(f"train from params directory {self.save_path}")
 
+        self.logger.info(f"git commit: {commit}")
         self.logger.info(f"save folder: {self.folder_dir}")
         self.logger.info(f"save path  : {self.save_path}")
         self.logger.info(f"log  file  : {self.logger.log_file}")
@@ -73,37 +78,48 @@ class Trainer:
         self.finetune = False
         self.early_stopping = EarlyStopping(patience=training_args.patience, delta=0.0)
 
+        self.kl_loss_weight_init = training_args.kl_loss_weight
+        self.training_args.kl_loss_weight = 0.0
+
         self._build_data()
         self._build_model()
         self._build_optim()
-        if training_args.distribute:
-            self._build_distribute()
 
     def _build_data(self):
         self.train_dataset = TrafficFlowDataset(self.training_args, "train")
         self.val_dataset = TrafficFlowDataset(self.training_args, "val")
         self.test_dataset = TrafficFlowDataset(self.training_args, "test")
 
-        self.train_dataloader = DataLoader(
+        if self.training_args.distribute and dist.get_world_size() > 1:
+            assert self.training_args.batch_size % dist.get_world_size() == 0
+            self.training_args.batch_size = int(
+                self.training_args.batch_size / dist.get_world_size()
+            )
+
+        train_sampler = io.DistributedBatchSampler(
             self.train_dataset,
             batch_size=self.training_args.batch_size,
             shuffle=True,
-            drop_last=True,
-            num_workers=4,
+            drop_last=False,
         )
-        self.eval_dataloader = DataLoader(
+        eval_sampler = io.DistributedBatchSampler(
             self.val_dataset,
             batch_size=self.training_args.batch_size,
-            shuffle=False,
             drop_last=False,
-            num_workers=4,
         )
-        self.test_dataloader = DataLoader(
+        test_sampler = io.DistributedBatchSampler(
             self.test_dataset,
             batch_size=self.training_args.batch_size,
-            shuffle=False,
             drop_last=False,
-            num_workers=4,
+        )
+        self.train_dataloader = io.DataLoader(
+            self.train_dataset, batch_sampler=train_sampler
+        )
+        self.eval_dataloader = io.DataLoader(
+            self.val_dataset, batch_sampler=eval_sampler
+        )
+        self.test_dataloader = io.DataLoader(
+            self.test_dataset, batch_sampler=test_sampler
         )
 
         # 保持输入序列长度为12
@@ -146,24 +162,17 @@ class Trainer:
         encoder_idx = paddle.concat(encoder_idx)
         decoder_idx = paddle.concat(decoder_idx)
 
-        if self.training_args.fp16:
-            self.encoder_idx = paddle.create_parameter(
-                shape=encoder_idx.shape, dtype="float16"
-            )
-            self.decoder_idx = paddle.create_parameter(
-                shape=decoder_idx.shape, dtype="float16"
-            )
-            self.encoder_idx.set_value(paddle.cast(encoder_idx, "float16"))
-            self.decoder_idx.set_value(paddle.cast(decoder_idx, "float16"))
-        else:
-            self.encoder_idx = paddle.create_parameter(
-                shape=encoder_idx.shape, dtype="float32"
-            )
-            self.decoder_idx = paddle.create_parameter(
-                shape=decoder_idx.shape, dtype="float32"
-            )
-            self.encoder_idx.set_value(paddle.cast(encoder_idx, "float32"))
-            self.decoder_idx.set_value(paddle.cast(decoder_idx, "float32"))
+        self.init_encoder_idx = encoder_idx
+        self.init_decoder_idx = decoder_idx
+
+        self.encoder_idx = paddle.create_parameter(
+            shape=encoder_idx.shape, dtype="float32"
+        )
+        self.decoder_idx = paddle.create_parameter(
+            shape=decoder_idx.shape, dtype="float32"
+        )
+        self.encoder_idx.set_value(paddle.cast(encoder_idx, "float32"))
+        self.decoder_idx.set_value(paddle.cast(decoder_idx, "float32"))
 
         self.logger.info(f"encoder_idx: {self.encoder_idx}")
         self.logger.info(f"decoder_idx: {self.decoder_idx}")
@@ -180,18 +189,17 @@ class Trainer:
 
         nn.initializer.set_global_initializer(XavierUniform(), Constant(value=0.0))
 
-        self.net = CorrSTN(
+        self.net = D3STN(
             self.training_args,
             adj_matrix=adj_matrix,
             sc_matrix=sc_matrix,
         )
 
-        if self.training_args.fp16:
-            self.net = paddle.amp.decorate(models=self.net, level="O2")
-            self.scaler = paddle.amp.GradScaler(init_loss_scaling=1024)
-
         if self.training_args.continue_training:
             self.load()
+
+        if self.training_args.distribute and dist.get_world_size() > 1:
+            self.net = paddle.DataParallel(self.net)
 
         self.logger.debug(self.net)
 
@@ -204,14 +212,23 @@ class Trainer:
             total_param += np.prod(self.net.state_dict()[param_tensor].shape)
         self.logger.debug(f"Net's total params: {total_param}.")
 
-        self.criterion = nn.L1Loss()  # 定义损失函数
+        if self.training_args.loss == "mae":
+            self.criterion = nn.L1Loss()  # 定义损失函数
+        elif self.training_args.loss == "mse":
+            self.criterion = nn.MSELoss()  # 定义损失函数
+        elif self.training_args.loss == "huber":
+            self.criterion = nn.SmoothL1Loss(delta=2.0)  # 定义损失函数
+        else:
+            raise NotImplementedError(
+                f"loss {self.training_args.loss} is not supported."
+            )
 
     def _build_optim(self):
         self.lr_scheduler = CosineAnnealingWithWarmupDecay(
             max_lr=1,
             min_lr=0.1,
-            warmup_step=0.2 * self.training_args.train_epochs,
-            decay_step=0.8 * self.training_args.train_epochs,
+            warmup_step=self.training_args.warmup_step,
+            decay_step=self.training_args.decay_step,
         )
 
         parameters = [
@@ -233,7 +250,7 @@ class Trainer:
         self.optimizer = optim.Adam(
             parameters=parameters,
             learning_rate=self.lr_scheduler,
-            weight_decay=self.training_args.weight_decay,
+            weight_decay=float(self.training_args.weight_decay),
             multi_precision=True,
         )
 
@@ -250,46 +267,46 @@ class Trainer:
 
         self.logger.info(f"dde_solver: {self.dde_solver}")
 
-    def _build_distribute(self):
-        # 二、初始化 Fleet 环境
-        fleet.init(is_collective=True)
+    def _init_finetune(self):
+        self.logger.info("Start FineTune Training")
+        self.load()
+        self.early_stopping.reset()
 
-        # 三、构建分布式训练使用的网络模型
-        self.net = fleet.distributed_model(self.net)
+        self.lr_scheduler = CosineAnnealingWithWarmupDecay(
+            max_lr=1,
+            min_lr=0.1,
+            warmup_step=self.training_args.warmup_step,
+            decay_step=self.training_args.decay_step,
+        )
 
-        # 四、构建分布式训练使用的优化器
-        self.optimizer = fleet.distributed_optimizer(self.optimizer)
+        parameters = [
+            {
+                "params": self.net.parameters(),
+                "learning_rate": 0.0,
+            },
+            {
+                "params": [self.decoder_idx],
+                "learning_rate": self.training_args.learning_rate,
+            },
+            {
+                "params": [self.encoder_idx],
+                "learning_rate": self.training_args.learning_rate,
+            },
+        ]
 
-        # 五、构建分布式训练使用的数据集
-        train_sampler = DistributedBatchSampler(
-            self.train_dataset,
-            batch_size=self.training_args.batch_size,
-            shuffle=True,
-            drop_last=False,
+        # 定义优化器，传入所有网络参数
+        self.optimizer = optim.Adam(
+            parameters=parameters,
+            learning_rate=self.lr_scheduler,
+            weight_decay=float(self.training_args.weight_decay),
+            multi_precision=True,
         )
-        self.train_dataloader = DataLoader(
-            self.train_dataset, batch_sampler=train_sampler, num_workers=12
-        )
-        eval_sampler = DistributedBatchSampler(
-            self.val_dataset,
-            batch_size=self.training_args.batch_size,
-            shuffle=False,
-            drop_last=False,
-        )
-        self.eval_dataloader = DataLoader(
-            self.val_dataset, batch_sampler=eval_sampler, num_workers=12
-        )
-        test_sampler = DistributedBatchSampler(
-            self.test_dataset,
-            batch_size=self.training_args.batch_size,
-            shuffle=False,
-            drop_last=False,
-        )
-        self.test_dataloader = DataLoader(
-            self.test_dataset, batch_sampler=test_sampler, num_workers=12
-        )
+        self.finetune = True
 
     def save(self, epoch=None):
+        if dist.get_rank() != 0:
+            return
+
         if epoch is not None:
             params_filename = os.path.join(self.save_path, f"epoch_{epoch}.params")
             encoder_idx_filename = os.path.join(self.save_path, f"epoch_{epoch}.enidx")
@@ -331,22 +348,26 @@ class Trainer:
         while (
             epoch < self.training_args.train_epochs + self.training_args.finetune_epochs
         ):
-            # finetune => load best trainging model
+            # finetune => load best training model
             if epoch == self.training_args.train_epochs:
                 self.compute_test_loss(epoch)
                 self._init_finetune()
-                self.train_func = self.finetune_one_step
+                # self.train_func = self.finetune_one_step
+
+            if epoch == self.training_args.warmup_step:
+                self.training_args.kl_loss_weight = self.kl_loss_weight_init
 
             self.net.train()  # ensure dropout layers are in train mode
             tr_s_time = time()
             epoch_step = 0
-            self.lr_scheduler.step()
+            self.lr_scheduler.step(epoch + 1)
             for batch_index, batch_data in enumerate(self.train_dataloader):
                 src, tgt = batch_data
                 src = paddle.cast(src, paddle.get_default_dtype())
                 tgt = paddle.cast(tgt, paddle.get_default_dtype())
-                _, training_loss = self.train_func(src, tgt)
+                _, training_loss, kl_loss = self.train_func(src, tgt)
                 self.writer.add_scalar("train/loss", training_loss, global_step)
+                self.writer.add_scalar("train/kl_loss", kl_loss, global_step)
                 self.writer.add_scalar("train/lr", self.optimizer.get_lr(), global_step)
                 epoch_step += 1
                 global_step += 1
@@ -360,7 +381,7 @@ class Trainer:
                 best_eval_loss = eval_loss
                 best_epoch = epoch
                 self.logger.info(f"best_epoch: {best_epoch}")
-                self.logger.info(f"eval_loss: {float(eval_loss)}")
+                self.logger.info(f"eval_loss: {eval_loss}")
                 self.compute_test_loss(epoch)
                 # save parameters
                 self.save(epoch=epoch)
@@ -382,46 +403,6 @@ class Trainer:
         self.load()
         self.compute_test_loss(epoch)
 
-    def _init_finetune(self):
-        self.logger.info("Start FineTune Training")
-        self.load()
-
-        self.early_stopping.reset()
-
-        self.lr_scheduler = CosineAnnealingWithWarmupDecay(
-            max_lr=1,
-            min_lr=0.1,
-            warmup_step=0.2 * self.training_args.finetune_epochs,
-            decay_step=0.8 * self.training_args.finetune_epochs,
-        )
-
-        parameters = [
-            {
-                "params": self.net.parameters(),
-                "learning_rate": self.training_args.learning_rate * 0.1,
-            },
-            {
-                "params": [self.decoder_idx],
-                "learning_rate": self.training_args.learning_rate,
-            },
-            {
-                "params": [self.encoder_idx],
-                "learning_rate": self.training_args.learning_rate,
-            },
-        ]
-
-        # 定义优化器，传入所有网络参数
-        self.optimizer = optim.Adam(
-            parameters=parameters,
-            learning_rate=self.lr_scheduler,
-            weight_decay=self.training_args.weight_decay,
-            multi_precision=True,
-        )
-
-        if self.training_args.distribute:
-            self.optimizer = fleet.distributed_optimizer(self.optimizer)
-        self.finetune = True
-
     def train_one_step(self, src, tgt):
         """_summary_
 
@@ -434,39 +415,50 @@ class Trainer:
         """
         self.net.train()
 
-        with amp_guard_context(self.training_args.fp16):
-            y0 = DecoderIndex.apply(
-                lags=self.decoder_idx,
-                his=src,
-                his_span=paddle.arange(self.training_args.his_len),
-            )
+        y0 = DecoderIndex.apply(
+            lags=self.decoder_idx,
+            his=src,
+            his_span=paddle.arange(self.training_args.his_len),
+        )
 
-            preds = ddeint(
-                func=self.net,
-                y0=y0,
-                t_span=paddle.arange(1 + 1),
-                lags=self.encoder_idx,
-                his=src,
-                his_span=paddle.arange(self.training_args.his_len),
-                solver=self.dde_solver,
-                fixed_solver_interp="",
-            )
-            pred_len = y0.shape[-2]
-            preds = preds[:, :, -pred_len:, :1]
+        preds, delay = ddeint(
+            func=self.net,
+            y0=y0,
+            t_span=paddle.arange(1 + 1),
+            lags=self.encoder_idx,
+            his=src,
+            his_span=paddle.arange(self.training_args.his_len),
+            solver=self.dde_solver,
+            fixed_solver_interp="",
+        )
+        pred_len = y0.shape[-2]
+        preds = preds[:, :, -pred_len:, :1]
+        loss = self.criterion(preds, tgt[..., :1])
 
-            loss = self.criterion(preds, tgt[..., :1])
-        if self.net.training:
-            if self.training_args.fp16:
-                scaled = self.scaler.scale(loss)  # loss 缩放，乘以系数 loss_scaling
-                scaled.backward()  # 反向传播
-                self.scaler.step(self.optimizer)  # 更新参数（参数梯度先除系数 loss_scaling 再更新参数）
-                self.scaler.update()  # 基于动态 loss_scaling 策略更新 loss_scaling 系数
-                self.optimizer.clear_grad(set_to_zero=False)
-            else:
-                loss.backward()
-                self.optimizer.step()
-                self.optimizer.clear_grad()
-        return preds, loss
+        align_loss = 0.0
+        tgt_softmax = F.softmax(tgt[..., :1], axis=-2)
+        # y0_log_softmax = F.log_softmax(y0[..., :1], axis=-2)
+        # y0_kl_loss = F.kl_div(y0_log_softmax, tgt_softmax, reduction="sum")
+        # align_loss += y0_kl_loss
+
+        delay_log_softmax = F.log_softmax(delay[..., :1], axis=-2)
+        delay_kl_loss = F.kl_div(delay_log_softmax, tgt_softmax)
+        align_loss += delay_kl_loss
+
+        preds_log_softmax = F.log_softmax(preds, axis=-2)
+        preds_kl_loss = F.kl_div(preds_log_softmax, tgt_softmax)
+        align_loss += preds_kl_loss
+
+        loss += self.training_args.kl_loss_weight * align_loss
+
+        loss.backward()
+        if self.training_args.distribute and dist.get_world_size() > 1:
+            fused_allreduce_gradients([self.encoder_idx, self.decoder_idx], None)
+
+        self.optimizer.step()
+        self.optimizer.clear_grad()
+
+        return preds, loss, align_loss
 
     def finetune_one_step(self, src, tgt):
         """_summary_
@@ -480,21 +472,34 @@ class Trainer:
         """
         self.net.train()
 
-        with amp_guard_context(self.training_args.fp16):
-            y0 = DecoderIndex.apply(
-                lags=self.decoder_idx,
-                his=src,
-                his_span=paddle.arange(self.training_args.his_len),
-            )
-            encoder_input = HistoryIndex.apply(
-                lags=self.encoder_idx,
-                his=src,
-                his_span=paddle.arange(self.training_args.his_len),
-            )
-            encoder_output = self.net.encode(encoder_input)
+        y0 = DecoderIndex.apply(
+            lags=self.decoder_idx,
+            his=src,
+            his_span=paddle.arange(self.training_args.his_len),
+        )
+        encoder_input = HistoryIndex.apply(
+            lags=self.encoder_idx,
+            his=src,
+            his_span=paddle.arange(self.training_args.his_len),
+        )
 
-            preds = ddeint(
-                func=self.net.decode,
+        if self.training_args.distribute and dist.get_world_size() > 1:
+            encoder_func = self.net._layers.encode
+            decoder_func = self.net._layers.decode
+        else:
+            encoder_func = self.net.encode
+            decoder_func = self.net.decode
+
+        def dist_no_sync():
+            if self.training_args.distribute and dist.get_world_size() > 1:
+                return self.net.no_sync()
+            else:
+                return contextlib.nullcontext()
+
+        with dist_no_sync():
+            encoder_output = encoder_func(encoder_input)
+            preds, delay = ddeint(
+                func=decoder_func,
                 y0=y0,
                 t_span=paddle.arange(1 + 1),
                 lags=None,
@@ -507,83 +512,75 @@ class Trainer:
             pred_len = y0.shape[-2]
             preds = preds[:, :, -pred_len:, :1]
 
-            loss = self.criterion(preds, tgt[..., :1])
-        if self.net.training:
-            if self.training_args.fp16:
-                scaled = self.scaler.scale(loss)  # loss 缩放，乘以系数 loss_scaling
-                scaled.backward()  # 反向传播
-                self.scaler.step(self.optimizer)  # 更新参数（参数梯度先除系数 loss_scaling 再更新参数）
-                self.scaler.update()  # 基于动态 loss_scaling 策略更新 loss_scaling 系数
-                self.optimizer.clear_grad(set_to_zero=False)
-            else:
-                loss.backward()
-                self.optimizer.step()
-                self.optimizer.clear_grad()
-        return preds, loss
+            delay_log_softmax = paddle.nn.functional.log_softmax(
+                delay[..., :1], axis=-2
+            )
+            tgt_softmax = paddle.nn.functional.softmax(tgt[..., :1], axis=-2)
+            kl_loss = paddle.nn.functional.kl_div(
+                delay_log_softmax, tgt_softmax, reduction="sum"
+            )
+            loss = (
+                self.criterion(preds, tgt[..., :1])
+                + self.training_args.kl_loss_weight * kl_loss
+            )
+
+            loss.backward()
+
+        if self.training_args.distribute and dist.get_world_size() > 1:
+            fused_allreduce_gradients(
+                list(self.net.parameters()) + [self.encoder_idx, self.decoder_idx], None
+            )
+
+        self.optimizer.step()
+        self.optimizer.clear_grad()
+
+        return preds, loss, kl_loss
 
     def eval_one_step(self, src, tgt):
         self.net.eval()
-        with amp_guard_context(self.training_args.fp16):
-            y0 = DecoderIndex.apply(
-                lags=self.decoder_idx,
-                his=src,
-                his_span=paddle.arange(self.training_args.his_len),
-            )
-            encoder_input = HistoryIndex.apply(
-                lags=self.encoder_idx,
-                his=src,
-                his_span=paddle.arange(self.training_args.his_len),
-            )
-            encoder_output = self.net.encode(encoder_input)
+        y0 = DecoderIndex.apply(
+            lags=self.decoder_idx,
+            his=src,
+            his_span=paddle.arange(self.training_args.his_len),
+        )
 
-            preds = ddeint(
-                func=self.net.decode,
-                y0=y0,
-                t_span=paddle.arange(1 + 1),
-                lags=None,
-                his=encoder_output,
-                his_span=None,
-                solver=self.dde_solver,
-                his_processed=True,
-                fixed_solver_interp="",
-            )
-            pred_len = y0.shape[-2]
-            preds = preds[:, :, -pred_len:, :1]
-
-            loss = self.criterion(preds, tgt[..., :1])
+        preds, _ = ddeint(
+            func=self.net,
+            y0=y0,
+            t_span=paddle.arange(1 + 1),
+            lags=self.encoder_idx,
+            his=src,
+            his_span=paddle.arange(self.training_args.his_len),
+            solver=self.dde_solver,
+            fixed_solver_interp="",
+        )
+        pred_len = y0.shape[-2]
+        preds = preds[:, :, -pred_len:, :1]
+        loss = self.criterion(preds, tgt[..., :1])
 
         return preds, loss
 
     def test_one_step(self, src, tgt):
         self.net.eval()
-        with amp_guard_context(self.training_args.fp16):
-            y0 = DecoderIndex.apply(
-                lags=self.decoder_idx,
-                his=src,
-                his_span=paddle.arange(self.training_args.his_len),
-            )
-            encoder_input = HistoryIndex.apply(
-                lags=self.encoder_idx,
-                his=src,
-                his_span=paddle.arange(self.training_args.his_len),
-            )
-            encoder_output = self.net.encode(encoder_input)
+        y0 = DecoderIndex.apply(
+            lags=self.decoder_idx,
+            his=src,
+            his_span=paddle.arange(self.training_args.his_len),
+        )
 
-            preds = ddeint(
-                func=self.net.decode,
-                y0=y0,
-                t_span=paddle.arange(1 + 1),
-                lags=None,
-                his=encoder_output,
-                his_span=None,
-                solver=self.dde_solver,
-                his_processed=True,
-                fixed_solver_interp="",
-            )
-            pred_len = y0.shape[-2]
-            preds = preds[:, :, -pred_len:, :1]
-
-            loss = self.criterion(preds, tgt[..., :1])
+        preds, _ = ddeint(
+            func=self.net,
+            y0=y0,
+            t_span=paddle.arange(1 + 1),
+            lags=self.encoder_idx,
+            his=src,
+            his_span=paddle.arange(self.training_args.his_len),
+            solver=self.dde_solver,
+            fixed_solver_interp="",
+        )
+        pred_len = y0.shape[-2]
+        preds = preds[:, :, -pred_len:, :1]
+        loss = self.criterion(preds, tgt[..., :1])
 
         return preds, loss
 
@@ -596,13 +593,20 @@ class Trainer:
                 src = paddle.cast(src, paddle.get_default_dtype())
                 tgt = paddle.cast(tgt, paddle.get_default_dtype())
                 predict_output, eval_loss = self.eval_one_step(src, tgt)
-                self.writer.add_scalar(f"eval/loss-{epoch}", eval_loss, batch_index)
 
                 all_eval_loss += eval_loss
 
-            eval_loss = all_eval_loss / len(self.eval_dataloader)
-            self.logger.info(f"eval cost time: {time() - start_time} s")
-            self.logger.info(f"eval_loss: {float(eval_loss)}")
+            eval_loss = (all_eval_loss / len(self.eval_dataloader)).cpu().numpy()
+
+            all_eval_loss = []
+            if dist.get_world_size() > 1:
+                dist.all_gather_object(all_eval_loss, eval_loss)
+                eval_loss = np.mean(
+                    [all_eval_loss[i] for i in range(dist.get_world_size())]
+                )
+                self.logger.info(f"eval cost time: {time() - start_time}s")
+                self.logger.info(f"eval_loss: {eval_loss}")
+                paddle.device.cuda.empty_cache()
         return eval_loss
 
     def compute_test_loss(self, epoch=-1):
@@ -615,7 +619,6 @@ class Trainer:
                 src = paddle.cast(src, paddle.get_default_dtype())
                 tgt = paddle.cast(tgt, paddle.get_default_dtype())
                 predict_output, test_loss = self.test_one_step(src, tgt)
-                self.writer.add_scalar(f"test/loss-{epoch}", test_loss, batch_index)
 
                 preds.append(predict_output)
                 tgts.append(tgt[..., :1])
@@ -623,20 +626,41 @@ class Trainer:
 
             preds = paddle.concat(preds, axis=0)  # [B,N,T,1]
             trues = paddle.concat(tgts, axis=0)  # [B,N,T,F]
+
             # [B,N,T,1]
-            preds = self.test_dataset.inverse_transform(preds, axis=-1).numpy()
+            preds = self.test_dataset.inverse_transform(preds).numpy()
             # [B,N,T,1]
-            trues = self.test_dataset.inverse_transform(trues, axis=-1).numpy()
+            trues = self.test_dataset.inverse_transform(trues).numpy()
+
+            if dist.get_world_size() > 1:
+                all_preds = []
+                all_trues = []
+                dist.all_gather_object(all_preds, preds)
+                dist.all_gather_object(all_trues, trues)
+                if dist.get_rank() == 0:
+                    preds = np.concatenate(
+                        [all_preds[i] for i in range(dist.get_world_size())], axis=0
+                    )
+                    trues = np.concatenate(
+                        [all_trues[i] for i in range(dist.get_world_size())], axis=0
+                    )
+                    paddle.device.cuda.empty_cache()
+                else:
+                    paddle.device.cuda.empty_cache()
+                    return
 
             self.logger.info(f"preds: {preds.shape}")
             self.logger.info(f"tgts: {trues.shape}")
 
-            for index in range(trues.shape[0]):
-                scalar_dict = {
-                    "true": trues[index, 0, 6, 0],
-                    "pred": preds[index, 0, 6, 0],
-                }
-                self.writer.add_scalars(f"test/line-{epoch}", scalar_dict, index)
+            from utils import smis
+
+            smis_score = smis(
+                trues.reshape(trues.shape[0], -1),
+                preds.reshape(preds.shape[0], -1),
+                m=288,
+                level=0.95,
+            )
+            self.logger.info(f"smis: {smis_score}")
 
             # 计算误差
             excel_list = []
@@ -644,18 +668,18 @@ class Trainer:
 
             for i in range(prediction_length):
                 assert preds.shape[0] == trues.shape[0]
-                mae = mean_absolute_error(trues[:, :, i, 0], preds[:, :, i, 0])
-                rmse = mean_squared_error(trues[:, :, i, 0], preds[:, :, i, 0]) ** 0.5
-                mape = masked_mape_np(trues[:, :, i, 0], preds[:, :, i, 0], 0)
+                mae = MAE(trues[:, :, i, 0], preds[:, :, i, 0])
+                rmse = RMSE(trues[:, :, i, 0], preds[:, :, i, 0])
+                mape = MAPE(trues[:, :, i, 0], preds[:, :, i, 0], 0.9)
                 self.logger.info(f"{i} MAE: {mae}")
                 self.logger.info(f"{i} RMSE: {rmse}")
                 self.logger.info(f"{i} MAPE: {mape}")
                 excel_list.extend([mae, rmse, mape])
 
             # print overall results
-            mae = mean_absolute_error(trues.reshape(-1, 1), preds.reshape(-1, 1))
-            rmse = mean_squared_error(trues.reshape(-1, 1), preds.reshape(-1, 1)) ** 0.5
-            mape = masked_mape_np(trues.reshape(-1, 1), preds.reshape(-1, 1), 0)
+            mae = MAE(trues.reshape(-1, 1), preds.reshape(-1, 1))
+            rmse = RMSE(trues.reshape(-1, 1), preds.reshape(-1, 1))
+            mape = MAPE(trues.reshape(-1, 1), preds.reshape(-1, 1), 0.9)
             self.logger.info(f"all MAE: {mae}")
             self.logger.info(f"all RMSE: {rmse}")
             self.logger.info(f"all MAPE: {mape}")
