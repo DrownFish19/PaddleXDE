@@ -78,6 +78,8 @@ class Trainer:
         self.finetune = False
         self.early_stopping = EarlyStopping(patience=training_args.patience, delta=0.0)
 
+        self.kl_loss_weight_init = training_args.kl_loss_weight
+
         self._build_data()
         self._build_model()
         self._build_optim()
@@ -350,6 +352,9 @@ class Trainer:
                 self.compute_test_loss(epoch)
                 self._init_finetune()
                 # self.train_func = self.finetune_one_step
+
+            if epoch == self.training_args.warmup_step:
+                self.training_args.kl_loss_weight = self.kl_loss_weight_init
 
             self.net.train()  # ensure dropout layers are in train mode
             tr_s_time = time()
