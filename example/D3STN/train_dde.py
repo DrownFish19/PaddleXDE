@@ -79,6 +79,7 @@ class Trainer:
         self.early_stopping = EarlyStopping(patience=training_args.patience, delta=0.0)
 
         self.kl_loss_weight_init = training_args.kl_loss_weight
+        self.training_args.kl_loss_weight = 0.0
 
         self._build_data()
         self._build_model()
