@@ -30,7 +30,7 @@
     "finetune_epochs": 100,
     "warmup_step": 40,
     "decay_step": 160,
-    "batch_size": 16,
+    "batch_size": 4,
     "loss": "mae",
     "kl_loss_weight": 0.001,
     "dropout": 0,
